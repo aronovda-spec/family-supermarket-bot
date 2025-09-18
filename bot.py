@@ -73,6 +73,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("suggest", self.suggest_item_command))
         self.application.add_handler(CommandHandler("managesuggestions", self.manage_suggestions_command))
         self.application.add_handler(CommandHandler("newitem", self.new_item_command))
+        self.application.add_handler(CommandHandler("search", self.search_command))
         self.application.add_handler(CommandHandler("language", self.language_command))
         
         # Callback query handler for inline keyboards
@@ -138,8 +139,8 @@ class ShoppingBot:
         keyboard = [
             [KeyboardButton(self.get_message(user_id, 'btn_categories')), KeyboardButton(self.get_message(user_id, 'btn_add_item'))],
             [KeyboardButton(self.get_message(user_id, 'btn_view_list')), KeyboardButton(self.get_message(user_id, 'btn_summary'))],
-            [KeyboardButton(self.get_message(user_id, 'btn_my_items')), KeyboardButton(self.get_message(user_id, 'btn_help'))],
-            [KeyboardButton(self.get_message(user_id, 'btn_language'))]
+            [KeyboardButton(self.get_message(user_id, 'btn_my_items')), KeyboardButton(self.get_message(user_id, 'btn_search'))],
+            [KeyboardButton(self.get_message(user_id, 'btn_help')), KeyboardButton(self.get_message(user_id, 'btn_language'))]
         ]
         
         # Add suggestion button for non-admin users only
@@ -297,6 +298,10 @@ class ShoppingBot:
               text == "➕ New Item" or text == "➕ פריט חדש"):
             await self.new_item_command(update, context)
             return
+        elif (text == self.get_message(user_id, 'btn_search') or 
+              text == "🔍 Search" or text == "🔍 חיפוש"):
+            await self.search_command(update, context)
+            return
 
         # Handle custom item addition
         if context.user_data.get('waiting_for_item'):
@@ -333,6 +338,11 @@ class ShoppingBot:
         # Handle new item translation (admin only)
         if context.user_data.get('waiting_for_new_item_translation'):
             await self.process_new_item_translation(update, context, text)
+            return
+        
+        # Handle search input
+        if context.user_data.get('waiting_for_search'):
+            await self.process_search(update, context, text)
             return
 
     async def process_custom_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
@@ -767,6 +777,84 @@ class ShoppingBot:
             category_name = self.get_category_name(user_id, category_key)
             input_prompt = f"➕ ADD NEW ITEM (ADMIN)\n\nCategory: {category_name}\n\nPlease type the item name in English:\n\n💡 Tips:\n• Use clear, simple names\n• Avoid brand names\n• Examples: 'Organic honey', 'Fresh basil', 'Whole wheat bread'\n\nType the item name:"
             await query.edit_message_text(input_prompt)
+        
+        elif data.startswith("search_add_"):
+            # Add existing item to shopping list
+            parts = data.replace("search_add_", "").split("_", 1)
+            if len(parts) == 2:
+                category_key = parts[0]
+                item_name = parts[1]
+                await self.process_category_item_selection(update, context, category_key, item_name)
+            else:
+                await query.edit_message_text("❌ Error processing search result.")
+        
+        elif data.startswith("search_select_"):
+            # Show selected item with action buttons
+            parts = data.replace("search_select_", "").split("_", 1)
+            if len(parts) == 2:
+                category_key = parts[0]
+                item_name = parts[1]
+                
+                # Get item details
+                category_data = CATEGORIES.get(category_key, {})
+                category_name = self.get_category_name(user_id, category_key)
+                
+                # Find the item
+                items_en = category_data.get('items', {}).get('en', [])
+                items_he = category_data.get('items', {}).get('he', [])
+                
+                try:
+                    item_index = items_en.index(item_name)
+                    hebrew_name = items_he[item_index] if item_index < len(items_he) else item_name
+                except ValueError:
+                    hebrew_name = item_name
+                
+                message = self.get_message(user_id, 'search_item_found').format(
+                    item_name=item_name,
+                    category=f"{category_data.get('emoji', '📦')} {category_name}",
+                    hebrew_name=hebrew_name
+                )
+                
+                keyboard = [
+                    [InlineKeyboardButton(
+                        self.get_message(user_id, 'search_add_existing'),
+                        callback_data=f"search_add_{category_key}_{item_name}"
+                    )]
+                ]
+                
+                if not self.db.is_user_admin(user_id):
+                    keyboard.append([InlineKeyboardButton(
+                        self.get_message(user_id, 'search_suggest_new'),
+                        callback_data=f"search_suggest_{category_key}"
+                    )])
+                
+                keyboard.append([InlineKeyboardButton(
+                    self.get_message(user_id, 'btn_back_menu'),
+                    callback_data="main_menu"
+                )])
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(message, reply_markup=reply_markup)
+            else:
+                await query.edit_message_text("❌ Error processing search selection.")
+        
+        elif data.startswith("search_suggest_"):
+            # Start suggestion process for category
+            category_key = data.replace("search_suggest_", "")
+            context.user_data['suggestion_category'] = category_key
+            context.user_data['waiting_for_suggestion_item'] = True
+            
+            category_name = self.get_category_name(user_id, category_key)
+            input_prompt = self.get_message(user_id, 'suggest_item_input').format(category=category_name)
+            await query.edit_message_text(input_prompt)
+        
+        elif data == "search_suggest_new":
+            # Show category selection for new suggestion
+            await self.show_suggestion_categories(update, context)
+        
+        elif data == "new_item_direct":
+            # Show category selection for new item (admin)
+            await self.show_new_item_categories(update, context)
 
     async def process_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                             category_key: str, item_name: str):
@@ -1513,6 +1601,166 @@ class ShoppingBot:
                 )
             except Exception as e:
                 logging.warning(f"Could not notify user {user['user_id']}: {e}")
+
+    async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /search command - search for items in categories"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+
+        await self.show_search_prompt(update, context)
+
+    async def show_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show search prompt"""
+        user_id = update.effective_user.id
+        context.user_data['waiting_for_search'] = True
+        
+        prompt_text = self.get_message(user_id, 'search_prompt')
+        await update.message.reply_text(prompt_text)
+
+    async def process_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, search_query: str):
+        """Process search query"""
+        user_id = update.effective_user.id
+        
+        if not search_query.strip():
+            await update.message.reply_text(self.get_message(user_id, 'search_empty'))
+            return
+        
+        context.user_data['waiting_for_search'] = False
+        
+        # Search for items
+        results = self.search_items(search_query.strip(), user_id)
+        
+        if results:
+            await self.show_search_results(update, context, search_query.strip(), results)
+        else:
+            await self.show_no_search_results(update, context, search_query.strip())
+
+    def search_items(self, query: str, user_id: int) -> List[Dict]:
+        """Search for items in all categories"""
+        results = []
+        query_lower = query.lower()
+        
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            
+            # Search in English items
+            for i, item_en in enumerate(category_data['items']['en']):
+                if query_lower in item_en.lower():
+                    item_he = category_data['items']['he'][i] if i < len(category_data['items']['he']) else item_en
+                    results.append({
+                        'item_name': item_en,
+                        'hebrew_name': item_he,
+                        'category': category_name,
+                        'category_key': category_key,
+                        'category_emoji': category_data['emoji']
+                    })
+            
+            # Search in Hebrew items
+            for i, item_he in enumerate(category_data['items']['he']):
+                if query_lower in item_he.lower():
+                    item_en = category_data['items']['en'][i] if i < len(category_data['items']['en']) else item_he
+                    results.append({
+                        'item_name': item_en,
+                        'hebrew_name': item_he,
+                        'category': category_name,
+                        'category_key': category_key,
+                        'category_emoji': category_data['emoji']
+                    })
+        
+        # Remove duplicates
+        unique_results = []
+        seen = set()
+        for result in results:
+            key = (result['item_name'], result['category_key'])
+            if key not in seen:
+                seen.add(key)
+                unique_results.append(result)
+        
+        return unique_results
+
+    async def show_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, results: List[Dict]):
+        """Show search results"""
+        user_id = update.effective_user.id
+        
+        if len(results) == 1:
+            # Single result - show directly with action buttons
+            result = results[0]
+            message = self.get_message(user_id, 'search_item_found').format(
+                item_name=result['item_name'],
+                category=f"{result['category_emoji']} {result['category']}",
+                hebrew_name=result['hebrew_name']
+            )
+            
+            keyboard = [
+                [InlineKeyboardButton(
+                    self.get_message(user_id, 'search_add_existing'),
+                    callback_data=f"search_add_{result['category_key']}_{result['item_name']}"
+                )]
+            ]
+            
+            if not self.db.is_user_admin(user_id):
+                keyboard.append([InlineKeyboardButton(
+                    self.get_message(user_id, 'search_suggest_new'),
+                    callback_data=f"search_suggest_{result['category_key']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(message, reply_markup=reply_markup)
+            
+        else:
+            # Multiple results - show list with selection
+            message = self.get_message(user_id, 'search_results').format(
+                count=len(results),
+                query=query
+            )
+            
+            keyboard = []
+            for result in results[:10]:  # Limit to 10 results
+                keyboard.append([InlineKeyboardButton(
+                    f"{result['category_emoji']} {result['item_name']} ({result['category']})",
+                    callback_data=f"search_select_{result['category_key']}_{result['item_name']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(message, reply_markup=reply_markup)
+
+    async def show_no_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
+        """Show no results message with options"""
+        user_id = update.effective_user.id
+        
+        message = self.get_message(user_id, 'search_no_results').format(query=query)
+        
+        keyboard = []
+        
+        if not self.db.is_user_admin(user_id):
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'search_suggest_new'),
+                callback_data="search_suggest_new"
+            )])
+        else:
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'btn_new_item'),
+                callback_data="new_item_direct"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_menu'),
+            callback_data="main_menu"
+        )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(message, reply_markup=reply_markup)
 
     async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /language command - show language selection"""
