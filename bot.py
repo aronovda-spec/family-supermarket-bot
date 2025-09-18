@@ -40,6 +40,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("reset", self.reset_command))
         self.application.add_handler(CommandHandler("users", self.users_command))
         self.application.add_handler(CommandHandler("authorize", self.authorize_command))
+        self.application.add_handler(CommandHandler("addadmin", self.add_admin_command))
         
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
@@ -629,7 +630,8 @@ class ShoppingBot:
 
         message_parts.append(f"\n📊 **Total Users:** {len(users)}")
         message_parts.append("\n💡 **Commands:**")
-        message_parts.append("• `/authorize <user_id>` - Authorize a user")
+        message_parts.append("• `/authorize <user_id>` - Authorize a regular user")
+        message_parts.append("• `/addadmin <user_id>` - Promote user to admin")
         message_parts.append("• `/users` - Show this list")
 
         full_message = "\n".join(message_parts)
@@ -715,6 +717,128 @@ class ShoppingBot:
 
         else:
             await update.message.reply_text("❌ Error authorizing user. Please try again.")
+
+    async def add_admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /addadmin command - promote user to admin (admin only)"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['not_registered'])
+            return
+
+        if not self.db.is_user_admin(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['admin_only'])
+            return
+
+        # Check if user_id was provided
+        if not context.args:
+            await update.message.reply_text(
+                "❌ **Usage:** `/addadmin <user_id>`\n\n"
+                "Example: `/addadmin 123456789`\n\n"
+                "⚠️ **Warning:** This gives the user full admin privileges including:\n"
+                "• User management\n"
+                "• Item deletion\n"
+                "• List reset\n"
+                "• Admin promotion\n\n"
+                "Use `/users` to see user IDs.",
+                parse_mode='Markdown'
+            )
+            return
+
+        try:
+            user_id_to_promote = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Invalid user ID. Please provide a numeric user ID.")
+            return
+
+        # Check if user exists in database
+        user_info = self.db.get_user_info(user_id_to_promote)
+        if not user_info:
+            await update.message.reply_text(
+                f"❌ User ID `{user_id_to_promote}` not found.\n\n"
+                "Users must send `/start` to the bot first before they can be promoted.",
+                parse_mode='Markdown'
+            )
+            return
+
+        if user_info['is_admin']:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_promote}"
+            await update.message.reply_text(f"✅ {user_name} is already an admin!")
+            return
+
+        # Promote user to admin (this also authorizes them if they weren't already)
+        success = self.db.add_user(
+            user_id_to_promote,
+            user_info['username'],
+            user_info['first_name'],
+            user_info['last_name'],
+            is_admin=True  # Promote to admin
+        )
+
+        if success:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_promote}"
+            admin_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+            
+            await update.message.reply_text(
+                f"👑 **User Promoted to Admin!**\n\n"
+                f"👤 {user_name} is now a family admin.\n\n"
+                f"🔑 **New Admin Privileges:**\n"
+                f"• Authorize/manage users\n"
+                f"• Delete items from shopping list\n"
+                f"• Reset shopping list\n"
+                f"• Promote other users to admin\n\n"
+                f"They will be notified of their new admin status.",
+                parse_mode='Markdown'
+            )
+
+            # Notify the new admin
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id_to_promote,
+                    text=f"👑 **Congratulations!**\n\n"
+                         f"You've been promoted to **Family Admin** by {admin_name}!\n\n"
+                         f"🔑 **Your new admin privileges:**\n"
+                         f"• `/users` - Manage family members\n"
+                         f"• `/authorize <user_id>` - Authorize new users\n"
+                         f"• `/addadmin <user_id>` - Promote users to admin\n"
+                         f"• `/reset` - Reset shopping list\n"
+                         f"• Delete items from shopping list\n\n"
+                         f"🛒 You now have full control over the family shopping bot!\n\n"
+                         f"Use `/help` to see all available commands.",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.warning(f"Could not notify new admin {user_id_to_promote}: {e}")
+
+            # Notify other admins
+            await self.notify_admins_promotion(update, context, user_name, user_id_to_promote)
+
+        else:
+            await update.message.reply_text("❌ Error promoting user to admin. Please try again.")
+
+    async def notify_admins_promotion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                    promoted_user_name: str, promoted_user_id: int):
+        """Notify other admins about user promotion"""
+        promoter_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+        message = (
+            f"👑 **New Admin Promoted**\n\n"
+            f"👤 **{promoted_user_name}** (ID: `{promoted_user_id}`)\n"
+            f"🔑 Promoted by: {promoter_name}\n\n"
+            f"They now have full admin privileges."
+        )
+        
+        # Get all admin users
+        all_users = self.db.get_all_users()
+        for db_user in all_users:
+            if (db_user['is_admin'] and 
+                db_user['user_id'] != update.effective_user.id and 
+                db_user['user_id'] != promoted_user_id):
+                try:
+                    await context.bot.send_message(
+                        chat_id=db_user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify admin {db_user['user_id']}: {e}")
 
     async def notify_admins_new_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user):
         """Notify admins about new user request"""
