@@ -141,6 +141,9 @@ class ShoppingBot:
         
         if self.db.is_user_admin(user_id):
             keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
+        
+        # Broadcast button for both admins and authorized users
+        if self.db.is_user_authorized(user_id):
             keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
