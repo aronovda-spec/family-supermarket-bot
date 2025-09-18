@@ -72,6 +72,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("broadcast", self.broadcast_command))
         self.application.add_handler(CommandHandler("suggest", self.suggest_item_command))
         self.application.add_handler(CommandHandler("managesuggestions", self.manage_suggestions_command))
+        self.application.add_handler(CommandHandler("newitem", self.new_item_command))
         self.application.add_handler(CommandHandler("language", self.language_command))
         
         # Callback query handler for inline keyboards
@@ -138,12 +139,16 @@ class ShoppingBot:
             [KeyboardButton(self.get_message(user_id, 'btn_categories')), KeyboardButton(self.get_message(user_id, 'btn_add_item'))],
             [KeyboardButton(self.get_message(user_id, 'btn_view_list')), KeyboardButton(self.get_message(user_id, 'btn_summary'))],
             [KeyboardButton(self.get_message(user_id, 'btn_my_items')), KeyboardButton(self.get_message(user_id, 'btn_help'))],
-            [KeyboardButton(self.get_message(user_id, 'btn_suggest_item')), KeyboardButton(self.get_message(user_id, 'btn_language'))]
+            [KeyboardButton(self.get_message(user_id, 'btn_language'))]
         ]
+        
+        # Add suggestion button for non-admin users only
+        if not self.db.is_user_admin(user_id):
+            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_suggest_item'))])
         
         if self.db.is_user_admin(user_id):
             keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
-            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_manage_suggestions'))])
+            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_manage_suggestions')), KeyboardButton(self.get_message(user_id, 'btn_new_item'))])
         
         # Broadcast button for both admins and authorized users
         if self.db.is_user_authorized(user_id):
@@ -288,6 +293,10 @@ class ShoppingBot:
               text == "💡 Manage Suggestions" or text == "💡 נהל הצעות"):
             await self.manage_suggestions_command(update, context)
             return
+        elif (text == self.get_message(user_id, 'btn_new_item') or 
+              text == "➕ New Item" or text == "➕ פריט חדש"):
+            await self.new_item_command(update, context)
+            return
 
         # Handle custom item addition
         if context.user_data.get('waiting_for_item'):
@@ -314,6 +323,16 @@ class ShoppingBot:
         # Handle suggestion translation
         if context.user_data.get('waiting_for_suggestion_translation'):
             await self.process_suggestion_translation(update, context, text)
+            return
+        
+        # Handle new item input (admin only)
+        if context.user_data.get('waiting_for_new_item'):
+            await self.process_new_item(update, context, text)
+            return
+        
+        # Handle new item translation (admin only)
+        if context.user_data.get('waiting_for_new_item_translation'):
+            await self.process_new_item_translation(update, context, text)
             return
 
     async def process_custom_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
@@ -736,6 +755,18 @@ class ShoppingBot:
             else:
                 await query.edit_message_text("✅ No more suggestions to review.")
                 await self.show_main_menu(update, context)
+        
+        elif data.startswith("new_item_category_"):
+            category_key = data.replace("new_item_category_", "")
+            user_id = update.effective_user.id
+            
+            # Store category and start new item process
+            context.user_data['new_item_category'] = category_key
+            context.user_data['waiting_for_new_item'] = True
+            
+            category_name = self.get_category_name(user_id, category_key)
+            input_prompt = f"➕ ADD NEW ITEM (ADMIN)\n\nCategory: {category_name}\n\nPlease type the item name in English:\n\n💡 Tips:\n• Use clear, simple names\n• Avoid brand names\n• Examples: 'Organic honey', 'Fresh basil', 'Whole wheat bread'\n\nType the item name:"
+            await query.edit_message_text(input_prompt)
 
     async def process_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                             category_key: str, item_name: str):
@@ -1363,6 +1394,125 @@ class ShoppingBot:
             
         except Exception as e:
             logging.error(f"Error notifying suggestion result: {e}")
+
+    async def new_item_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /newitem command - admin can add items directly to categories"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+
+        if not self.db.is_user_admin(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            return
+
+        await self.show_new_item_categories(update, context)
+
+    async def show_new_item_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show category selection for adding new items directly (admin only)"""
+        user_id = update.effective_user.id
+        keyboard = []
+        
+        # Create category buttons
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            keyboard.append([InlineKeyboardButton(
+                f"{category_data['emoji']} {category_name}",
+                callback_data=f"new_item_category_{category_key}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_menu'),
+            callback_data="main_menu"
+        )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        prompt_text = "➕ ADD NEW ITEM (ADMIN)\n\nChoose a category to add a new item directly:"
+        
+        if update.message:
+            await update.message.reply_text(prompt_text, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(prompt_text, reply_markup=reply_markup)
+
+    async def process_new_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
+        """Process new item name input (admin only)"""
+        user_id = update.effective_user.id
+        
+        if not item_name.strip():
+            await update.message.reply_text("❌ Please provide an item name.")
+            return
+        
+        # Store the item name and ask for Hebrew translation
+        context.user_data['new_item_name'] = item_name.strip()
+        context.user_data['waiting_for_new_item'] = False
+        context.user_data['waiting_for_new_item_translation'] = True
+        
+        category_key = context.user_data.get('new_item_category')
+        category_name = self.get_category_name(user_id, category_key)
+        
+        translation_prompt = f"🌐 Translation Required (Admin)\n\nItem: {item_name.strip()}\nCategory: {category_name}\n\nPlease provide the Hebrew translation:\n\n💡 Tips:\n• Use common Hebrew terms\n• Keep it simple and clear\n• Examples: 'דבש אורגני', 'בזיליקום טרי', 'לחם מחיטה מלאה'\n\nType the Hebrew translation:"
+        
+        await update.message.reply_text(translation_prompt)
+
+    async def process_new_item_translation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hebrew_translation: str):
+        """Process new item Hebrew translation input (admin only)"""
+        user_id = update.effective_user.id
+        
+        if not hebrew_translation.strip():
+            await update.message.reply_text("❌ Please provide a Hebrew translation.")
+            return
+        
+        # Get stored data
+        item_name_en = context.user_data.get('new_item_name')
+        category_key = context.user_data.get('new_item_category')
+        
+        if not item_name_en or not category_key:
+            await update.message.reply_text("❌ Error processing new item. Please try again.")
+            return
+        
+        # Add item directly to the category (admin privilege)
+        if self.add_item_to_category(category_key, item_name_en, hebrew_translation.strip()):
+            category_name = self.get_category_name(user_id, category_key)
+            success_message = f"✅ New Item Added!\n\n📝 Item: {item_name_en}\n🌐 Hebrew: {hebrew_translation.strip()}\n📂 Category: {category_name}\n\nThis item is now available for everyone!"
+            await update.message.reply_text(success_message)
+            
+            # Notify all users about the new item
+            await self.notify_users_new_item(update, context, item_name_en, hebrew_translation.strip(), category_name)
+        else:
+            await update.message.reply_text("❌ Error adding new item. Please try again.")
+        
+        # Clear waiting states
+        context.user_data.pop('waiting_for_new_item_translation', None)
+        context.user_data.pop('new_item_name', None)
+        context.user_data.pop('new_item_category', None)
+
+    def add_item_to_category(self, category_key: str, item_name_en: str, item_name_he: str) -> bool:
+        """Add item directly to category (admin only)"""
+        try:
+            # Update the CATEGORIES dictionary in config.py
+            # This is a simplified approach - in production you'd want to persist this
+            if category_key in CATEGORIES:
+                CATEGORIES[category_key]['items']['en'].append(item_name_en)
+                CATEGORIES[category_key]['items']['he'].append(item_name_he)
+                return True
+            return False
+        except Exception as e:
+            logging.error(f"Error adding item to category: {e}")
+            return False
+
+    async def notify_users_new_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                  item_name_en: str, item_name_he: str, category_name: str):
+        """Notify all users about new item added by admin"""
+        users = self.db.get_all_authorized_users()
+        
+        for user in users:
+            try:
+                notification = f"🆕 NEW ITEM ADDED!\n\n📝 Item: {item_name_en}\n🌐 Hebrew: {item_name_he}\n📂 Category: {category_name}\n\nThis item is now available in the categories menu!"
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text=notification
+                )
+            except Exception as e:
+                logging.warning(f"Could not notify user {user['user_id']}: {e}")
 
     async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /language command - show language selection"""
