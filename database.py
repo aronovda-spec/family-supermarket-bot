@@ -55,6 +55,18 @@ class Database:
                     )
                 ''')
                 
+                # Broadcast messages table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS broadcast_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sender_id INTEGER,
+                        message TEXT NOT NULL,
+                        sent_to_count INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (sender_id) REFERENCES users (user_id)
+                    )
+                ''')
+                
                 conn.commit()
                 logging.info("Database initialized successfully")
                 
@@ -360,3 +372,71 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting user language: {e}")
             return False
+
+    def get_all_authorized_users(self) -> List[Dict]:
+        """Get all authorized users for broadcasting"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT user_id, username, first_name, last_name, language 
+                    FROM users 
+                    WHERE is_authorized = TRUE
+                ''')
+                users = []
+                for row in cursor.fetchall():
+                    users.append({
+                        'user_id': row[0],
+                        'username': row[1],
+                        'first_name': row[2],
+                        'last_name': row[3],
+                        'language': row[4] or 'en'
+                    })
+                return users
+        except Exception as e:
+            logging.error(f"Error getting authorized users: {e}")
+            return []
+
+    def save_broadcast_message(self, sender_id: int, message: str, sent_to_count: int) -> bool:
+        """Save broadcast message to history"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO broadcast_messages (sender_id, message, sent_to_count)
+                    VALUES (?, ?, ?)
+                ''', (sender_id, message, sent_to_count))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error saving broadcast message: {e}")
+            return False
+
+    def get_broadcast_history(self, limit: int = 10) -> List[Dict]:
+        """Get recent broadcast message history"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT bm.id, bm.message, bm.sent_to_count, bm.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM broadcast_messages bm
+                    JOIN users u ON bm.sender_id = u.user_id
+                    ORDER BY bm.created_at DESC
+                    LIMIT ?
+                ''', (limit,))
+                broadcasts = []
+                for row in cursor.fetchall():
+                    broadcasts.append({
+                        'id': row[0],
+                        'message': row[1],
+                        'sent_to_count': row[2],
+                        'created_at': row[3],
+                        'sender_username': row[4],
+                        'sender_first_name': row[5],
+                        'sender_last_name': row[6]
+                    })
+                return broadcasts
+        except Exception as e:
+            logging.error(f"Error getting broadcast history: {e}")
+            return []
