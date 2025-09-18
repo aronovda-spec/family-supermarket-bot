@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import sqlite3
 from datetime import datetime
 from typing import Dict, List
 
@@ -37,6 +38,8 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("summary", self.summary_command))
         self.application.add_handler(CommandHandler("myitems", self.my_items_command))
         self.application.add_handler(CommandHandler("reset", self.reset_command))
+        self.application.add_handler(CommandHandler("users", self.users_command))
+        self.application.add_handler(CommandHandler("authorize", self.authorize_command))
         
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
@@ -57,7 +60,23 @@ class ShoppingBot:
                     f"🔑 Welcome Admin {user.first_name}!\n\n" + MESSAGES['welcome']
                 )
             else:
-                await update.message.reply_text(MESSAGES['not_registered'])
+                # Add user to database but not authorized yet
+                self.db.add_user(user.id, user.username, user.first_name, user.last_name, is_admin=False)
+                # Update database to mark as unauthorized
+                with sqlite3.connect(self.db.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('UPDATE users SET is_authorized = FALSE WHERE user_id = ?', (user.id,))
+                    conn.commit()
+                
+                await update.message.reply_text(
+                    f"👋 Hi {user.first_name}!\n\n"
+                    f"🔒 Your access request has been submitted to the family admins.\n\n"
+                    f"📧 An admin will authorize you soon, and you'll get a notification when you can start using the bot.\n\n"
+                    f"⏳ Please wait for approval..."
+                )
+                
+                # Notify admins about new user request
+                await self.notify_admins_new_user(update, context, user)
                 return
         else:
             # Update user info
@@ -84,7 +103,7 @@ class ShoppingBot:
         ]
         
         if self.db.is_user_admin(update.effective_user.id):
-            keyboard.append([KeyboardButton("🗑️ Reset List")])
+            keyboard.append([KeyboardButton("🗑️ Reset List"), KeyboardButton("👥 Manage Users")])
         
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
@@ -192,6 +211,9 @@ class ShoppingBot:
             return
         elif text == "🗑️ Reset List":
             await self.reset_command(update, context)
+            return
+        elif text == "👥 Manage Users":
+            await self.users_command(update, context)
             return
 
         # Handle custom item addition
@@ -562,6 +584,162 @@ class ShoppingBot:
             await update.callback_query.edit_message_text(
                 "❌ Error resetting the shopping list. Please try again."
             )
+
+    async def users_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /users command - show user management (admin only)"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['not_registered'])
+            return
+
+        if not self.db.is_user_admin(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['admin_only'])
+            return
+
+        users = self.db.get_all_users()
+        
+        if not users:
+            await update.message.reply_text("👥 No users registered yet.")
+            return
+
+        # Build user list message
+        message_parts = ["👥 **User Management**\n"]
+        
+        admins = [u for u in users if u['is_admin']]
+        authorized = [u for u in users if u['is_authorized'] and not u['is_admin']]
+        unauthorized = [u for u in users if not u['is_authorized']]
+
+        if admins:
+            message_parts.append("👑 **Admins:**")
+            for user in admins:
+                name = user['first_name'] or user['username'] or f"User {user['user_id']}"
+                message_parts.append(f"• {name} (ID: {user['user_id']})")
+
+        if authorized:
+            message_parts.append("\n✅ **Authorized Users:**")
+            for user in authorized:
+                name = user['first_name'] or user['username'] or f"User {user['user_id']}"
+                message_parts.append(f"• {name} (ID: {user['user_id']})")
+
+        if unauthorized:
+            message_parts.append("\n⏳ **Pending Authorization:**")
+            for user in unauthorized:
+                name = user['first_name'] or user['username'] or f"User {user['user_id']}"
+                message_parts.append(f"• {name} (ID: {user['user_id']})")
+                message_parts.append(f"  `/authorize {user['user_id']}`")
+
+        message_parts.append(f"\n📊 **Total Users:** {len(users)}")
+        message_parts.append("\n💡 **Commands:**")
+        message_parts.append("• `/authorize <user_id>` - Authorize a user")
+        message_parts.append("• `/users` - Show this list")
+
+        full_message = "\n".join(message_parts)
+        await update.message.reply_text(full_message, parse_mode='Markdown')
+
+    async def authorize_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /authorize command - authorize a user (admin only)"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['not_registered'])
+            return
+
+        if not self.db.is_user_admin(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['admin_only'])
+            return
+
+        # Check if user_id was provided
+        if not context.args:
+            await update.message.reply_text(
+                "❌ **Usage:** `/authorize <user_id>`\n\n"
+                "Example: `/authorize 123456789`\n\n"
+                "Use `/users` to see pending users and their IDs.",
+                parse_mode='Markdown'
+            )
+            return
+
+        try:
+            user_id_to_authorize = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Invalid user ID. Please provide a numeric user ID.")
+            return
+
+        # Check if user exists in database
+        user_info = self.db.get_user_info(user_id_to_authorize)
+        if not user_info:
+            await update.message.reply_text(
+                f"❌ User ID `{user_id_to_authorize}` not found.\n\n"
+                "Users must send `/start` to the bot first before they can be authorized.",
+                parse_mode='Markdown'
+            )
+            return
+
+        if user_info['is_authorized']:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_authorize}"
+            await update.message.reply_text(f"✅ {user_name} is already authorized!")
+            return
+
+        # Authorize the user
+        success = self.db.add_user(
+            user_id_to_authorize,
+            user_info['username'],
+            user_info['first_name'],
+            user_info['last_name'],
+            is_admin=False  # Regular authorization, not admin
+        )
+
+        if success:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_authorize}"
+            admin_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+            
+            await update.message.reply_text(
+                f"✅ **User Authorized!**\n\n"
+                f"👤 {user_name} can now use the shopping bot.\n\n"
+                f"They will be notified and can start using all bot features.",
+                parse_mode='Markdown'
+            )
+
+            # Notify the authorized user
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id_to_authorize,
+                    text=f"🎉 **Great news!**\n\n"
+                         f"You've been authorized by {admin_name} to use the Family Shopping List Bot!\n\n"
+                         f"You can now:\n"
+                         f"• Browse categories with /categories\n"
+                         f"• Add custom items with /add\n"
+                         f"• View the shopping list with /list\n"
+                         f"• Get summaries with /summary\n\n"
+                         f"Use /help to see all available commands. Happy shopping! 🛒",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.warning(f"Could not notify authorized user {user_id_to_authorize}: {e}")
+
+        else:
+            await update.message.reply_text("❌ Error authorizing user. Please try again.")
+
+    async def notify_admins_new_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user):
+        """Notify admins about new user request"""
+        user_name = user.first_name or user.username or f"User {user.id}"
+        message = (
+            f"👤 **New User Request**\n\n"
+            f"Name: {user_name}\n"
+            f"Username: @{user.username if user.username else 'None'}\n"
+            f"ID: `{user.id}`\n\n"
+            f"To authorize: `/authorize {user.id}`\n"
+            f"To view all users: `/users`"
+        )
+        
+        # Get all admin users
+        all_users = self.db.get_all_users()
+        for db_user in all_users:
+            if db_user['is_admin'] and db_user['user_id'] != user.id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=db_user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify admin {db_user['user_id']}: {e}")
 
     async def notify_users_item_added(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                     item_name: str, note: str = None):
