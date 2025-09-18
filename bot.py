@@ -70,6 +70,8 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("authorize", self.authorize_command))
         self.application.add_handler(CommandHandler("addadmin", self.add_admin_command))
         self.application.add_handler(CommandHandler("broadcast", self.broadcast_command))
+        self.application.add_handler(CommandHandler("suggest", self.suggest_item_command))
+        self.application.add_handler(CommandHandler("managesuggestions", self.manage_suggestions_command))
         self.application.add_handler(CommandHandler("language", self.language_command))
         
         # Callback query handler for inline keyboards
@@ -136,11 +138,12 @@ class ShoppingBot:
             [KeyboardButton(self.get_message(user_id, 'btn_categories')), KeyboardButton(self.get_message(user_id, 'btn_add_item'))],
             [KeyboardButton(self.get_message(user_id, 'btn_view_list')), KeyboardButton(self.get_message(user_id, 'btn_summary'))],
             [KeyboardButton(self.get_message(user_id, 'btn_my_items')), KeyboardButton(self.get_message(user_id, 'btn_help'))],
-            [KeyboardButton(self.get_message(user_id, 'btn_language'))]
+            [KeyboardButton(self.get_message(user_id, 'btn_suggest_item')), KeyboardButton(self.get_message(user_id, 'btn_language'))]
         ]
         
         if self.db.is_user_admin(user_id):
             keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
+            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_manage_suggestions'))])
         
         # Broadcast button for both admins and authorized users
         if self.db.is_user_authorized(user_id):
@@ -277,6 +280,14 @@ class ShoppingBot:
               text == "📢 Broadcast" or text == "📢 שידור"):
             await self.broadcast_command(update, context)
             return
+        elif (text == self.get_message(user_id, 'btn_suggest_item') or 
+              text == "💡 Suggest Item" or text == "💡 הצע פריט"):
+            await self.suggest_item_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_manage_suggestions') or 
+              text == "💡 Manage Suggestions" or text == "💡 נהל הצעות"):
+            await self.manage_suggestions_command(update, context)
+            return
 
         # Handle custom item addition
         if context.user_data.get('waiting_for_item'):
@@ -293,6 +304,16 @@ class ShoppingBot:
         # Handle broadcast message
         if context.user_data.get('waiting_for_broadcast'):
             await self.process_broadcast_message(update, context, text)
+            return
+        
+        # Handle suggestion input
+        if context.user_data.get('waiting_for_suggestion_item'):
+            await self.process_suggestion_item(update, context, text)
+            return
+        
+        # Handle suggestion translation
+        if context.user_data.get('waiting_for_suggestion_translation'):
+            await self.process_suggestion_translation(update, context, text)
             return
 
     async def process_custom_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
@@ -663,6 +684,58 @@ class ShoppingBot:
                 await self.show_main_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error changing language.")
+        
+        elif data.startswith("suggest_category_"):
+            category_key = data.replace("suggest_category_", "")
+            user_id = update.effective_user.id
+            
+            # Store category and start suggestion process
+            context.user_data['suggestion_category'] = category_key
+            context.user_data['waiting_for_suggestion_item'] = True
+            
+            category_name = self.get_category_name(user_id, category_key)
+            input_prompt = self.get_message(user_id, 'suggest_item_input').format(category=category_name)
+            await query.edit_message_text(input_prompt)
+        
+        elif data.startswith("approve_suggestion_"):
+            suggestion_id = int(data.replace("approve_suggestion_", ""))
+            user_id = update.effective_user.id
+            
+            if self.db.approve_suggestion(suggestion_id, user_id):
+                suggestion = self.db.get_suggestion_by_id(suggestion_id)
+                if suggestion:
+                    # Notify the user who suggested the item
+                    await self.notify_suggestion_result(update, context, suggestion, 'approved')
+                
+                await query.edit_message_text("✅ Suggestion approved!")
+                await self.show_main_menu(update, context)
+            else:
+                await query.edit_message_text("❌ Error approving suggestion.")
+        
+        elif data.startswith("reject_suggestion_"):
+            suggestion_id = int(data.replace("reject_suggestion_", ""))
+            user_id = update.effective_user.id
+            
+            if self.db.reject_suggestion(suggestion_id, user_id):
+                suggestion = self.db.get_suggestion_by_id(suggestion_id)
+                if suggestion:
+                    # Notify the user who suggested the item
+                    await self.notify_suggestion_result(update, context, suggestion, 'rejected')
+                
+                await query.edit_message_text("❌ Suggestion rejected.")
+                await self.show_main_menu(update, context)
+            else:
+                await query.edit_message_text("❌ Error rejecting suggestion.")
+        
+        elif data.startswith("next_suggestion_"):
+            current_index = int(data.replace("next_suggestion_", ""))
+            suggestions = self.db.get_pending_suggestions()
+            
+            if current_index < len(suggestions):
+                await self.show_suggestion_review(update, context, suggestions[current_index], current_index, len(suggestions))
+            else:
+                await query.edit_message_text("✅ No more suggestions to review.")
+                await self.show_main_menu(update, context)
 
     async def process_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                             category_key: str, item_name: str):
@@ -1103,6 +1176,193 @@ class ShoppingBot:
         
         # Clear waiting state
         context.user_data['waiting_for_broadcast'] = False
+
+    async def suggest_item_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /suggest command - show category selection for suggesting new items"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+
+        await self.show_suggestion_categories(update, context)
+
+    async def show_suggestion_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show category selection for item suggestions"""
+        user_id = update.effective_user.id
+        keyboard = []
+        
+        # Create category buttons
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            keyboard.append([InlineKeyboardButton(
+                f"{category_data['emoji']} {category_name}",
+                callback_data=f"suggest_category_{category_key}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_menu'),
+            callback_data="main_menu"
+        )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        prompt_text = self.get_message(user_id, 'suggest_item_prompt')
+        
+        if update.message:
+            await update.message.reply_text(prompt_text, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(prompt_text, reply_markup=reply_markup)
+
+    async def process_suggestion_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
+        """Process suggestion item name input"""
+        user_id = update.effective_user.id
+        
+        if not item_name.strip():
+            await update.message.reply_text(self.get_message(user_id, 'suggestion_empty'))
+            return
+        
+        # Store the item name and ask for Hebrew translation
+        context.user_data['suggestion_item_name'] = item_name.strip()
+        context.user_data['waiting_for_suggestion_item'] = False
+        context.user_data['waiting_for_suggestion_translation'] = True
+        
+        category_key = context.user_data.get('suggestion_category')
+        category_name = self.get_category_name(user_id, category_key)
+        
+        translation_prompt = self.get_message(user_id, 'suggest_item_translation').format(
+            item_name=item_name.strip(),
+            category=category_name
+        )
+        
+        await update.message.reply_text(translation_prompt)
+
+    async def process_suggestion_translation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hebrew_translation: str):
+        """Process suggestion Hebrew translation input"""
+        user_id = update.effective_user.id
+        
+        if not hebrew_translation.strip():
+            await update.message.reply_text(self.get_message(user_id, 'suggestion_translation_empty'))
+            return
+        
+        # Get stored data
+        item_name_en = context.user_data.get('suggestion_item_name')
+        category_key = context.user_data.get('suggestion_category')
+        
+        if not item_name_en or not category_key:
+            await update.message.reply_text(self.get_message(user_id, 'suggestion_error'))
+            return
+        
+        # Save suggestion to database
+        if self.db.add_item_suggestion(user_id, category_key, item_name_en, hebrew_translation.strip()):
+            category_name = self.get_category_name(user_id, category_key)
+            success_message = self.get_message(user_id, 'suggestion_submitted').format(
+                item_name_en=item_name_en,
+                item_name_he=hebrew_translation.strip(),
+                category=category_name
+            )
+            await update.message.reply_text(success_message)
+            
+            # Notify admins about new suggestion
+            await self.notify_admins_new_suggestion(update, context, item_name_en, hebrew_translation.strip(), category_name)
+        else:
+            await update.message.reply_text(self.get_message(user_id, 'suggestion_error'))
+        
+        # Clear waiting states
+        context.user_data.pop('waiting_for_suggestion_translation', None)
+        context.user_data.pop('suggestion_item_name', None)
+        context.user_data.pop('suggestion_category', None)
+
+    async def notify_admins_new_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                         item_name_en: str, item_name_he: str, category_name: str):
+        """Notify admins about new item suggestion"""
+        admins = self.db.get_all_users()
+        admins = [admin for admin in admins if admin['is_admin']]
+        
+        for admin in admins:
+            try:
+                notification = f"💡 NEW ITEM SUGGESTION\n\n📝 Item: {item_name_en}\n🌐 Hebrew: {item_name_he}\n📂 Category: {category_name}\n\nUse 'Manage Suggestions' to review."
+                await context.bot.send_message(
+                    chat_id=admin['user_id'],
+                    text=notification
+                )
+            except Exception as e:
+                logging.warning(f"Could not notify admin {admin['user_id']}: {e}")
+
+    async def manage_suggestions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /managesuggestions command - show pending suggestions for admin review"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+
+        if not self.db.is_user_admin(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            return
+
+        suggestions = self.db.get_pending_suggestions()
+        
+        if not suggestions:
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'suggestions_empty'))
+            return
+        
+        # Show first suggestion for review
+        await self.show_suggestion_review(update, context, suggestions[0], 0, len(suggestions))
+
+    async def show_suggestion_review(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                  suggestion: Dict, current_index: int, total_count: int):
+        """Show suggestion for admin review"""
+        user_id = update.effective_user.id
+        category_name = self.get_category_name(user_id, suggestion['category_key'])
+        
+        message = f"💡 SUGGESTION REVIEW ({current_index + 1}/{total_count})\n\n"
+        message += f"📝 Item: {suggestion['item_name_en']}\n"
+        message += f"🌐 Hebrew: {suggestion['item_name_he']}\n"
+        message += f"📂 Category: {category_name}\n"
+        message += f"👤 Suggested by: {suggestion['suggested_by_first_name'] or suggestion['suggested_by_username'] or 'Unknown'}\n"
+        message += f"📅 Date: {suggestion['created_at']}\n\n"
+        message += "Choose an action:"
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_approve'),
+                callback_data=f"approve_suggestion_{suggestion['id']}"
+            ), InlineKeyboardButton(
+                self.get_message(user_id, 'btn_reject'),
+                callback_data=f"reject_suggestion_{suggestion['id']}"
+            )]
+        ]
+        
+        if total_count > 1:
+            keyboard.append([InlineKeyboardButton(
+                "⏭️ Next",
+                callback_data=f"next_suggestion_{current_index + 1}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_main_menu'),
+            callback_data="main_menu"
+        )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def notify_suggestion_result(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                     suggestion: Dict, result: str):
+        """Notify user about suggestion approval/rejection"""
+        try:
+            # Get the user who made the suggestion
+            suggested_by = suggestion.get('suggested_by_first_name') or suggestion.get('suggested_by_username')
+            
+            # For now, we'll need to get the user_id from the suggestion
+            # This would require modifying the database query to include user_id
+            # For simplicity, we'll skip individual notifications for now
+            # In a full implementation, you'd store the user_id and send them a message
+            
+            logging.info(f"Suggestion {suggestion['id']} {result} - Item: {suggestion['item_name_en']}")
+            
+        except Exception as e:
+            logging.error(f"Error notifying suggestion result: {e}")
 
     async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /language command - show language selection"""

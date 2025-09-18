@@ -67,6 +67,23 @@ class Database:
                     )
                 ''')
                 
+                # Item suggestions table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS item_suggestions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        suggested_by INTEGER,
+                        category_key TEXT NOT NULL,
+                        item_name_en TEXT NOT NULL,
+                        item_name_he TEXT,
+                        status TEXT DEFAULT 'pending',
+                        approved_by INTEGER,
+                        approved_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (suggested_by) REFERENCES users (user_id),
+                        FOREIGN KEY (approved_by) REFERENCES users (user_id)
+                    )
+                ''')
+                
                 conn.commit()
                 logging.info("Database initialized successfully")
                 
@@ -440,3 +457,110 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting broadcast history: {e}")
             return []
+
+    def add_item_suggestion(self, suggested_by: int, category_key: str, item_name_en: str, item_name_he: str = None) -> bool:
+        """Add a new item suggestion"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO item_suggestions (suggested_by, category_key, item_name_en, item_name_he)
+                    VALUES (?, ?, ?, ?)
+                ''', (suggested_by, category_key, item_name_en, item_name_he))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error adding item suggestion: {e}")
+            return False
+
+    def get_pending_suggestions(self) -> List[Dict]:
+        """Get all pending item suggestions"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT s.id, s.category_key, s.item_name_en, s.item_name_he, s.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM item_suggestions s
+                    JOIN users u ON s.suggested_by = u.user_id
+                    WHERE s.status = 'pending'
+                    ORDER BY s.created_at DESC
+                ''')
+                suggestions = []
+                for row in cursor.fetchall():
+                    suggestions.append({
+                        'id': row[0],
+                        'category_key': row[1],
+                        'item_name_en': row[2],
+                        'item_name_he': row[3],
+                        'created_at': row[4],
+                        'suggested_by_username': row[5],
+                        'suggested_by_first_name': row[6],
+                        'suggested_by_last_name': row[7]
+                    })
+                return suggestions
+        except Exception as e:
+            logging.error(f"Error getting pending suggestions: {e}")
+            return []
+
+    def approve_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
+        """Approve an item suggestion"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE item_suggestions 
+                    SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'pending'
+                ''', (approved_by, suggestion_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error approving suggestion: {e}")
+            return False
+
+    def reject_suggestion(self, suggestion_id: int, rejected_by: int) -> bool:
+        """Reject an item suggestion"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE item_suggestions 
+                    SET status = 'rejected', approved_by = ?, approved_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'pending'
+                ''', (rejected_by, suggestion_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error rejecting suggestion: {e}")
+            return False
+
+    def get_suggestion_by_id(self, suggestion_id: int) -> Optional[Dict]:
+        """Get suggestion details by ID"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT s.id, s.category_key, s.item_name_en, s.item_name_he, s.status, s.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM item_suggestions s
+                    JOIN users u ON s.suggested_by = u.user_id
+                    WHERE s.id = ?
+                ''', (suggestion_id,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'id': row[0],
+                        'category_key': row[1],
+                        'item_name_en': row[2],
+                        'item_name_he': row[3],
+                        'status': row[4],
+                        'created_at': row[5],
+                        'suggested_by_username': row[6],
+                        'suggested_by_first_name': row[7],
+                        'suggested_by_last_name': row[8]
+                    }
+                return None
+        except Exception as e:
+            logging.error(f"Error getting suggestion by ID: {e}")
+            return None
