@@ -7,7 +7,7 @@ from typing import Dict, List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-from config import BOT_TOKEN, ADMIN_IDS, CATEGORIES, MESSAGES
+from config import BOT_TOKEN, ADMIN_IDS, CATEGORIES, MESSAGES, LANGUAGES
 from database import Database
 
 # Configure logging
@@ -22,10 +22,38 @@ class ShoppingBot:
         self.db = Database()
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
-        
-        # Initialize admin users
-        for admin_id in ADMIN_IDS:
-            self.db.add_user(admin_id, is_admin=True)
+
+        # Initialize admin users - DISABLED to prevent overwriting database
+        # Admins should be set up manually or via permanent_admin_fix.py
+        # for admin_id in ADMIN_IDS:
+        #     self.db.add_user(admin_id, username=None, first_name=None, last_name=None, is_admin=True)
+
+    def get_user_language(self, user_id: int) -> str:
+        """Get user's preferred language"""
+        return self.db.get_user_language(user_id)
+
+    def get_message(self, user_id: int, key: str, **kwargs) -> str:
+        """Get localized message for user"""
+        lang = self.get_user_language(user_id)
+        message = MESSAGES.get(lang, MESSAGES['en']).get(key, MESSAGES['en'].get(key, key))
+        if kwargs:
+            try:
+                return message.format(**kwargs)
+            except:
+                return message
+        return message
+
+    def get_category_name(self, user_id: int, category_key: str) -> str:
+        """Get localized category name"""
+        lang = self.get_user_language(user_id)
+        category = CATEGORIES.get(category_key, {})
+        return category.get('name', {}).get(lang, category.get('name', {}).get('en', category_key))
+
+    def get_category_items(self, user_id: int, category_key: str) -> List[str]:
+        """Get localized category items"""
+        lang = self.get_user_language(user_id)
+        category = CATEGORIES.get(category_key, {})
+        return category.get('items', {}).get(lang, category.get('items', {}).get('en', []))
 
     def setup_handlers(self):
         """Set up command and callback handlers"""
@@ -41,6 +69,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("users", self.users_command))
         self.application.add_handler(CommandHandler("authorize", self.authorize_command))
         self.application.add_handler(CommandHandler("addadmin", self.add_admin_command))
+        self.application.add_handler(CommandHandler("language", self.language_command))
         
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
@@ -58,7 +87,7 @@ class ShoppingBot:
             if user.id in ADMIN_IDS:
                 self.db.add_user(user.id, user.username, user.first_name, user.last_name, is_admin=True)
                 await update.message.reply_text(
-                    f"🔑 Welcome Admin {user.first_name}!\n\n" + MESSAGES['welcome']
+                    f"🔑 Welcome Admin {user.first_name}!\n\n" + self.get_message(user.id, 'welcome')
                 )
             else:
                 # Add user to database but not authorized yet
@@ -80,9 +109,11 @@ class ShoppingBot:
                 await self.notify_admins_new_user(update, context, user)
                 return
         else:
-            # Update user info
-            self.db.add_user(user.id, user.username, user.first_name, user.last_name)
-            await update.message.reply_text(MESSAGES['welcome'])
+            # Update user info - preserve admin status
+            existing_user = self.db.get_user_info(user.id)
+            is_existing_admin = existing_user['is_admin'] if existing_user else False
+            self.db.add_user(user.id, user.username, user.first_name, user.last_name, is_admin=is_existing_admin)
+            await update.message.reply_text(self.get_message(user.id, 'welcome'))
 
         # Show main menu
         await self.show_main_menu(update, context)
@@ -90,89 +121,97 @@ class ShoppingBot:
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
             
-        await update.message.reply_text(MESSAGES['help'], parse_mode='Markdown')
+        help_text = self.get_message(update.effective_user.id, 'help')
+        await update.message.reply_text(help_text)
 
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show main menu with quick action buttons"""
+        user_id = update.effective_user.id
+        
         keyboard = [
-            [KeyboardButton("📋 Categories"), KeyboardButton("➕ Add Item")],
-            [KeyboardButton("📝 View List"), KeyboardButton("📊 Summary")],
-            [KeyboardButton("👤 My Items"), KeyboardButton("❓ Help")]
+            [KeyboardButton(self.get_message(user_id, 'btn_categories')), KeyboardButton(self.get_message(user_id, 'btn_add_item'))],
+            [KeyboardButton(self.get_message(user_id, 'btn_view_list')), KeyboardButton(self.get_message(user_id, 'btn_summary'))],
+            [KeyboardButton(self.get_message(user_id, 'btn_my_items')), KeyboardButton(self.get_message(user_id, 'btn_help'))],
+            [KeyboardButton(self.get_message(user_id, 'btn_language'))]
         ]
         
-        if self.db.is_user_admin(update.effective_user.id):
-            keyboard.append([KeyboardButton("🗑️ Reset List"), KeyboardButton("👥 Manage Users")])
+        if self.db.is_user_admin(user_id):
+            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
         
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
+        main_menu_text = self.get_message(user_id, 'main_menu')
+        
         if update.message:
-            await update.message.reply_text(
-                "🛒 What would you like to do?", 
-                reply_markup=reply_markup
-            )
+            await update.message.reply_text(main_menu_text, reply_markup=reply_markup)
         elif update.callback_query:
-            await update.callback_query.message.reply_text(
-                "🛒 What would you like to do?", 
-                reply_markup=reply_markup
-            )
+            await update.callback_query.message.reply_text(main_menu_text, reply_markup=reply_markup)
 
     async def categories_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /categories command - show category selection"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         await self.show_categories(update, context)
 
     async def show_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show categories for selection"""
+        user_id = update.effective_user.id
         keyboard = []
         for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
             keyboard.append([InlineKeyboardButton(
-                f"{category_data['emoji']} {category_data['name']}", 
+                f"{category_data['emoji']} {category_name}", 
                 callback_data=f"category_{category_key}"
             )])
         
-        keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_menu'), 
+            callback_data="main_menu"
+        )])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        text = "🛒 **Select a category to browse items:**"
+        text = self.get_message(user_id, 'categories_title')
         
         if update.message:
-            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.message.reply_text(text, reply_markup=reply_markup)
         elif update.callback_query:
-            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
     async def show_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
         """Show items in a specific category"""
+        user_id = update.effective_user.id
         category_data = CATEGORIES.get(category_key)
         if not category_data:
             return
 
         keyboard = []
-        for item in category_data['items']:
+        category_items = self.get_category_items(user_id, category_key)
+        for item in category_items:
             keyboard.append([InlineKeyboardButton(
                 f"✅ {item}", 
                 callback_data=f"add_item_{category_key}_{item}"
             )])
-        
+
         keyboard.append([
-            InlineKeyboardButton("🔙 Back to Categories", callback_data="categories"),
-            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+            InlineKeyboardButton(self.get_message(user_id, 'btn_back_categories'), callback_data="categories"),
+            InlineKeyboardButton(self.get_message(user_id, 'btn_main_menu'), callback_data="main_menu")
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        text = f"{category_data['emoji']} **{category_data['name']}**\n\nTap ✅ to add items to your shopping list:"
+        category_name = self.get_category_name(user_id, category_key)
+        text = f"{category_data['emoji']} {category_name}\n\nTap ✅ to add items to your shopping list:"
         
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
     async def add_item_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /add command - prompt for custom item"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         context.user_data['waiting_for_item'] = True
@@ -186,34 +225,47 @@ class ShoppingBot:
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle text messages"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         text = update.message.text.strip()
+        user_id = update.effective_user.id
         
-        # Handle main menu buttons
-        if text == "📋 Categories":
+        # Handle main menu buttons - check both English and Hebrew
+        if (text == self.get_message(user_id, 'btn_categories') or 
+            text == "📋 Categories" or text == "📋 קטגוריות"):
             await self.show_categories(update, context)
             return
-        elif text == "➕ Add Item":
+        elif (text == self.get_message(user_id, 'btn_add_item') or 
+              text == "➕ Add Item" or text == "➕ הוסף פריט"):
             await self.add_item_command(update, context)
             return
-        elif text == "📝 View List":
+        elif (text == self.get_message(user_id, 'btn_view_list') or 
+              text == "📝 View List" or text == "📝 צפה ברשימה"):
             await self.list_command(update, context)
             return
-        elif text == "📊 Summary":
+        elif (text == self.get_message(user_id, 'btn_summary') or 
+              text == "📊 Summary" or text == "📊 סיכום"):
             await self.summary_command(update, context)
             return
-        elif text == "👤 My Items":
+        elif (text == self.get_message(user_id, 'btn_my_items') or 
+              text == "👤 My Items" or text == "👤 הפריטים שלי"):
             await self.my_items_command(update, context)
             return
-        elif text == "❓ Help":
+        elif (text == self.get_message(user_id, 'btn_help') or 
+              text == "❓ Help" or text == "❓ עזרה"):
             await self.help_command(update, context)
             return
-        elif text == "🗑️ Reset List":
+        elif (text == self.get_message(user_id, 'btn_language') or 
+              text == "🌐 Language" or text == "🌐 שפה"):
+            await self.language_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_reset_list') or 
+              text == "🗑️ Reset List" or text == "🗑️ אפס רשימה"):
             await self.reset_command(update, context)
             return
-        elif text == "👥 Manage Users":
+        elif (text == self.get_message(user_id, 'btn_manage_users') or 
+              text == "👥 Manage Users" or text == "👥 נהל משתמשים"):
             await self.users_command(update, context)
             return
 
@@ -241,16 +293,21 @@ class ShoppingBot:
             'user_id': update.effective_user.id
         }
         
-        keyboard = [[InlineKeyboardButton("Skip Notes", callback_data="skip_note")]]
+        user_id = update.effective_user.id
+        keyboard = [
+            [
+                InlineKeyboardButton(self.get_message(user_id, 'btn_add'), callback_data="skip_note"),
+                InlineKeyboardButton(self.get_message(user_id, 'btn_notes'), callback_data="add_note")
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
+        adding_text = self.get_message(user_id, 'adding_item', item=item_name)
+        prompt_text = self.get_message(user_id, 'add_notes_prompt')
+
         await update.message.reply_text(
-            f"✅ **Adding:** {item_name}\n\n"
-            "📝 Would you like to add notes? (quantity, brand, priority, etc.)\n\n"
-            "_Example: 2 bottles, organic brand_\n\n"
-            "Or tap 'Skip Notes' to add without notes:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            f"{adding_text}\n\n{prompt_text}",
+            reply_markup=reply_markup
         )
 
     async def process_item_with_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_info: Dict, note: str = None):
@@ -265,30 +322,36 @@ class ShoppingBot:
             added_by=item_info['user_id']
         )
         
+        user_id = item_info['user_id']
         if item_id:
             note_text = f"\n📝 Note: {note}" if note else ""
-            await update.message.reply_text(
-                f"✅ **Added to shopping list:**\n"
-                f"🛒 {item_info['name']}{note_text}\n\n"
-                f"Use /list to view the complete shopping list.",
-                parse_mode='Markdown'
-            )
+            success_message = self.get_message(user_id, 'item_added', item=item_info['name'], note=note_text)
+            
+            # Check if it's from callback query (Add button) or text message (typed note)
+            if update.callback_query:
+                await update.callback_query.edit_message_text(success_message)
+            else:
+                await update.message.reply_text(success_message)
             
             # Notify other users
             await self.notify_users_item_added(update, context, item_info['name'], note)
         else:
-            await update.message.reply_text("❌ Error adding item. Please try again.")
+            error_message = self.get_message(user_id, 'error_adding')
+            if update.callback_query:
+                await update.callback_query.edit_message_text(error_message)
+            else:
+                await update.message.reply_text(error_message)
 
     async def list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /list command - show current shopping list"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         items = self.db.get_shopping_list()
         
         if not items:
-            await update.message.reply_text(MESSAGES['list_empty'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'list_empty'))
             return
 
         # Group items by category
@@ -300,17 +363,20 @@ class ShoppingBot:
             categorized_items[category].append(item)
 
         # Build message
-        message_parts = ["🛒 **Current Shopping List:**\n"]
+        message_parts = ["🛒 Current Shopping List:\n"]
         
+        user_id = update.effective_user.id
         for category, category_items in categorized_items.items():
-            # Get category emoji
+            # Get category emoji and localized name
             category_emoji = "📦"
+            category_display_name = category
             for cat_key, cat_data in CATEGORIES.items():
-                if cat_key == category or cat_data['name'] == category:
+                if cat_key == category:
                     category_emoji = cat_data['emoji']
+                    category_display_name = self.get_category_name(user_id, cat_key)
                     break
             
-            message_parts.append(f"\n{category_emoji} **{category}**")
+            message_parts.append(f"\n{category_emoji} {category_display_name}:")
             
             for item in category_items:
                 item_text = f"• {item['name']}"
@@ -334,36 +400,36 @@ class ShoppingBot:
                 
                 message_parts.append(item_text)
 
-        message_parts.append(f"\n📊 **Total items:** {len(items)}")
+        message_parts.append(f"\n📊 Total items: {len(items)}")
         
         full_message = "\n".join(message_parts)
         
         # Split message if too long
         if len(full_message) > 4000:
             # Send in chunks
-            current_chunk = "🛒 **Current Shopping List:**\n"
+            current_chunk = "🛒 Current Shopping List:\n"
             for part in message_parts[1:]:
                 if len(current_chunk + part) > 4000:
-                    await update.message.reply_text(current_chunk, parse_mode='Markdown')
+                    await update.message.reply_text(current_chunk)
                     current_chunk = part
                 else:
                     current_chunk += "\n" + part
             
             if current_chunk:
-                await update.message.reply_text(current_chunk, parse_mode='Markdown')
+                await update.message.reply_text(current_chunk)
         else:
-            await update.message.reply_text(full_message, parse_mode='Markdown')
+            await update.message.reply_text(full_message)
 
     async def summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /summary command - generate formatted shopping report"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         items = self.db.get_shopping_list()
         
         if not items:
-            await update.message.reply_text(MESSAGES['list_empty'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'list_empty'))
             return
 
         # Group items by category
@@ -376,21 +442,24 @@ class ShoppingBot:
 
         # Build clean summary
         summary_parts = [
-            "📊 **SHOPPING SUMMARY REPORT**",
+            "📊 SHOPPING SUMMARY REPORT",
             f"📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             f"📋 Total Items: {len(items)}",
             "─" * 30
         ]
         
+        user_id = update.effective_user.id
         for category, category_items in categorized_items.items():
-            # Get category emoji
+            # Get category emoji and localized name
             category_emoji = "📦"
+            category_display_name = category
             for cat_key, cat_data in CATEGORIES.items():
-                if cat_key == category or cat_data['name'] == category:
+                if cat_key == category:
                     category_emoji = cat_data['emoji']
+                    category_display_name = self.get_category_name(user_id, cat_key)
                     break
             
-            summary_parts.append(f"\n{category_emoji} **{category.upper()}** ({len(category_items)} items)")
+            summary_parts.append(f"\n{category_emoji} {category_display_name.upper()} ({len(category_items)} items)")
             
             for i, item in enumerate(category_items, 1):
                 item_line = f"{i:2d}. {item['name']}"
@@ -418,28 +487,27 @@ class ShoppingBot:
             current_chunk = ""
             for part in summary_parts:
                 if len(current_chunk + part) > 4000:
-                    await update.message.reply_text(current_chunk, parse_mode='Markdown')
+                    await update.message.reply_text(current_chunk)
                     current_chunk = part
                 else:
                     current_chunk += "\n" + part if current_chunk else part
             
             if current_chunk:
-                await update.message.reply_text(current_chunk, parse_mode='Markdown')
+                await update.message.reply_text(current_chunk)
         else:
-            await update.message.reply_text(full_summary, parse_mode='Markdown')
+            await update.message.reply_text(full_summary)
 
     async def my_items_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /myitems command - show items added by current user"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         user_items = self.db.get_items_by_user(update.effective_user.id)
         
         if not user_items:
             await update.message.reply_text(
-                "📝 You haven't added any items to the shopping list yet.\n\n"
-                "Use /categories to browse items or /add to add custom items!"
+                self.get_message(update.effective_user.id, 'my_items_empty')
             )
             return
 
@@ -452,17 +520,20 @@ class ShoppingBot:
             categorized_items[category].append(item)
 
         # Build message
-        message_parts = [f"👤 **Your Items ({len(user_items)} total):**\n"]
+        message_parts = [f"👤 Your Items ({len(user_items)} total):\n"]
         
+        user_id = update.effective_user.id
         for category, category_items in categorized_items.items():
-            # Get category emoji
+            # Get category emoji and localized name
             category_emoji = "📦"
+            category_display_name = category
             for cat_key, cat_data in CATEGORIES.items():
-                if cat_key == category or cat_data['name'] == category:
+                if cat_key == category:
                     category_emoji = cat_data['emoji']
+                    category_display_name = self.get_category_name(user_id, cat_key)
                     break
             
-            message_parts.append(f"\n{category_emoji} **{category}**")
+            message_parts.append(f"\n{category_emoji} {category_display_name}:")
             
             for item in category_items:
                 item_text = f"• {item['name']}"
@@ -480,16 +551,16 @@ class ShoppingBot:
                 message_parts.append(item_text)
 
         full_message = "\n".join(message_parts)
-        await update.message.reply_text(full_message, parse_mode='Markdown')
+        await update.message.reply_text(full_message)
 
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /reset command - reset shopping list (admin only)"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['admin_only'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
             return
 
         # Confirmation keyboard
@@ -515,7 +586,7 @@ class ShoppingBot:
         await query.answer()
         
         if not self.db.is_user_authorized(update.effective_user.id):
-            await query.edit_message_text(MESSAGES['not_registered'])
+            await query.edit_message_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         data = query.data
@@ -532,9 +603,21 @@ class ShoppingBot:
             await self.show_category_items(update, context, category_key)
         
         elif data.startswith("add_item_"):
-            parts = data.replace("add_item_", "").split("_", 1)
-            if len(parts) == 2:
-                category_key, item_name = parts
+            # Parse: add_item_categorykey_itemname
+            # We need to be careful with category keys that contain underscores
+            remaining = data.replace("add_item_", "")
+            
+            # Find the category key by checking against known categories
+            category_key = None
+            item_name = None
+            
+            for cat_key in CATEGORIES.keys():
+                if remaining.startswith(cat_key + "_"):
+                    category_key = cat_key
+                    item_name = remaining[len(cat_key) + 1:]  # +1 for the underscore
+                    break
+            
+            if category_key and item_name:
                 await self.process_category_item_selection(update, context, category_key, item_name)
         
         elif data == "skip_note":
@@ -542,11 +625,30 @@ class ShoppingBot:
             if item_info:
                 await self.process_item_with_note(update, context, item_info)
         
+        elif data == "add_note":
+            item_info = context.user_data.get('item_info')
+            if item_info:
+                context.user_data['waiting_for_note'] = True
+                user_id = update.effective_user.id
+                input_text = self.get_message(user_id, 'add_notes_input', item=item_info['name'])
+                await query.edit_message_text(input_text)
+        
         elif data == "confirm_reset":
             await self.confirm_reset(update, context)
         
         elif data == "cancel_reset":
             await query.edit_message_text("❌ Reset cancelled.")
+        
+        elif data.startswith("set_language_"):
+            language = data.replace("set_language_", "")
+            user_id = update.effective_user.id
+            
+            if self.db.set_user_language(user_id, language):
+                success_text = self.get_message(user_id, 'language_selected')
+                await query.edit_message_text(success_text)
+                await self.show_main_menu(update, context)
+            else:
+                await query.edit_message_text("❌ Error changing language.")
 
     async def process_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                             category_key: str, item_name: str):
@@ -559,16 +661,21 @@ class ShoppingBot:
             'user_id': update.effective_user.id
         }
         
-        keyboard = [[InlineKeyboardButton("Skip Notes", callback_data="skip_note")]]
+        user_id = update.effective_user.id
+        keyboard = [
+            [
+                InlineKeyboardButton(self.get_message(user_id, 'btn_add'), callback_data="skip_note"),
+                InlineKeyboardButton(self.get_message(user_id, 'btn_notes'), callback_data="add_note")
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        adding_text = self.get_message(user_id, 'adding_item', item=item_name)
+        prompt_text = self.get_message(user_id, 'add_notes_prompt')
+        
         await update.callback_query.edit_message_text(
-            f"✅ **Adding:** {item_name}\n\n"
-            "📝 Would you like to add notes? (quantity, brand, priority, etc.)\n\n"
-            "_Example: 2 bottles, organic brand_\n\n"
-            "Type your note or tap 'Skip Notes':",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            f"{adding_text}\n\n{prompt_text}",
+            reply_markup=reply_markup
         )
 
     async def confirm_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -589,11 +696,11 @@ class ShoppingBot:
     async def users_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /users command - show user management (admin only)"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['admin_only'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
             return
 
         users = self.db.get_all_users()
@@ -640,11 +747,11 @@ class ShoppingBot:
     async def authorize_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /authorize command - authorize a user (admin only)"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['admin_only'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
             return
 
         # Check if user_id was provided
@@ -721,11 +828,11 @@ class ShoppingBot:
     async def add_admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /addadmin command - promote user to admin (admin only)"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['not_registered'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['admin_only'])
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
             return
 
         # Check if user_id was provided
@@ -906,6 +1013,35 @@ class ShoppingBot:
                     )
                 except Exception as e:
                     logger.warning(f"Could not notify user {db_user['user_id']}: {e}")
+
+    async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /language command - show language selection"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+
+        await self.show_language_selection(update, context)
+
+    async def show_language_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show language selection menu"""
+        user_id = update.effective_user.id
+        current_lang = self.get_user_language(user_id)
+        
+        keyboard = []
+        for lang_code, lang_info in LANGUAGES.items():
+            current_marker = " ✅" if lang_code == current_lang else ""
+            keyboard.append([InlineKeyboardButton(
+                f"{lang_info['emoji']} {lang_info['name']}{current_marker}",
+                callback_data=f"set_language_{lang_code}"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        select_text = self.get_message(user_id, 'select_language')
+        
+        if update.message:
+            await update.message.reply_text(select_text, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(select_text, reply_markup=reply_markup)
 
     def run(self):
         """Run the bot"""
