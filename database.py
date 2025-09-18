@@ -24,6 +24,7 @@ class Database:
                         last_name TEXT,
                         is_admin BOOLEAN DEFAULT FALSE,
                         is_authorized BOOLEAN DEFAULT FALSE,
+                        language TEXT DEFAULT 'en',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
@@ -335,3 +336,27 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting all users: {e}")
             return []
+
+    def get_user_language(self, user_id: int) -> str:
+        """Get user's preferred language"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT language FROM users WHERE user_id = ?', (user_id,))
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else 'en'
+        except Exception as e:
+            logging.error(f"Error getting user language: {e}")
+            return 'en'
+
+    def set_user_language(self, user_id: int, language: str) -> bool:
+        """Set user's preferred language"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('UPDATE users SET language = ? WHERE user_id = ?', (language, user_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error setting user language: {e}")
+            return False
