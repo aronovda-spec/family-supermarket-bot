@@ -52,7 +52,8 @@ MESSAGES = {
 **Admin Commands:**
 /reset - 🔴 Reset the entire list
 /users - 👥 Manage users and view status
-/authorize <user_id> - ✅ Authorize a new user
+/authorize <user_id> - ✅ Authorize a regular user
+/addadmin <user_id> - 👑 Promote user to admin
 
 **Quick Actions:**
 - Tap ✅ next to category items to add them
