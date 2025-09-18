@@ -75,6 +75,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("newitem", self.new_item_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
         self.application.add_handler(CommandHandler("language", self.language_command))
+        self.application.add_handler(CommandHandler("menu", self.menu_command))
         
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
@@ -123,6 +124,14 @@ class ShoppingBot:
         # Show main menu
         await self.show_main_menu(update, context)
 
+    async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /menu command - show main menu"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+        
+        await self.show_main_menu(update, context)
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
         if not self.db.is_user_authorized(update.effective_user.id):
@@ -136,26 +145,31 @@ class ShoppingBot:
         """Show main menu with quick action buttons"""
         user_id = update.effective_user.id
         
+        # Base keyboard layout - search is in second row as requested
         keyboard = [
             [KeyboardButton(self.get_message(user_id, 'btn_categories')), KeyboardButton(self.get_message(user_id, 'btn_add_item'))],
+            [KeyboardButton(self.get_message(user_id, 'btn_search')), KeyboardButton(self.get_message(user_id, 'btn_my_items'))],
             [KeyboardButton(self.get_message(user_id, 'btn_view_list')), KeyboardButton(self.get_message(user_id, 'btn_summary'))],
-            [KeyboardButton(self.get_message(user_id, 'btn_my_items')), KeyboardButton(self.get_message(user_id, 'btn_search'))],
             [KeyboardButton(self.get_message(user_id, 'btn_help')), KeyboardButton(self.get_message(user_id, 'btn_language'))]
         ]
         
         # Add suggestion button for non-admin users only
         if not self.db.is_user_admin(user_id):
-            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_suggest_item'))])
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_suggest_item'))])
         
+        # Add admin buttons
         if self.db.is_user_admin(user_id):
-            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
-            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_manage_suggestions')), KeyboardButton(self.get_message(user_id, 'btn_new_item'))])
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_manage_suggestions')), KeyboardButton(self.get_message(user_id, 'btn_new_item'))])
         
         # Broadcast button for both admins and authorized users
         if self.db.is_user_authorized(user_id):
-            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        # Always add Menu button at the end
+        keyboard.append([KeyboardButton("🏠 Menu")])
+        
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
         
         main_menu_text = self.get_message(user_id, 'main_menu')
         
@@ -301,6 +315,9 @@ class ShoppingBot:
         elif (text == self.get_message(user_id, 'btn_search') or 
               text == "🔍 Search" or text == "🔍 חיפוש"):
             await self.search_command(update, context)
+            return
+        elif text == "🏠 Menu":
+            await self.show_main_menu(update, context)
             return
 
         # Handle custom item addition
@@ -780,20 +797,22 @@ class ShoppingBot:
         
         elif data.startswith("search_add_"):
             # Add existing item to shopping list
+            import urllib.parse
             parts = data.replace("search_add_", "").split("_", 1)
             if len(parts) == 2:
                 category_key = parts[0]
-                item_name = parts[1]
+                item_name = urllib.parse.unquote(parts[1])
                 await self.process_category_item_selection(update, context, category_key, item_name)
             else:
                 await query.edit_message_text("❌ Error processing search result.")
         
         elif data.startswith("search_select_"):
             # Show selected item with action buttons
+            import urllib.parse
             parts = data.replace("search_select_", "").split("_", 1)
             if len(parts) == 2:
                 category_key = parts[0]
-                item_name = parts[1]
+                item_name = urllib.parse.unquote(parts[1])
                 
                 # Get item details
                 category_data = CATEGORIES.get(category_key, {})
@@ -815,23 +834,17 @@ class ShoppingBot:
                     hebrew_name=hebrew_name
                 )
                 
+                import urllib.parse
                 keyboard = [
                     [InlineKeyboardButton(
-                        self.get_message(user_id, 'search_add_existing'),
-                        callback_data=f"search_add_{category_key}_{item_name}"
+                        "✅ ADD TO THE LIST",
+                        callback_data=f"search_add_{category_key}_{urllib.parse.quote(item_name)}"
+                    )],
+                    [InlineKeyboardButton(
+                        self.get_message(user_id, 'btn_back_menu'),
+                        callback_data="main_menu"
                     )]
                 ]
-                
-                if not self.db.is_user_admin(user_id):
-                    keyboard.append([InlineKeyboardButton(
-                        self.get_message(user_id, 'search_suggest_new'),
-                        callback_data=f"search_suggest_{category_key}"
-                    )])
-                
-                keyboard.append([InlineKeyboardButton(
-                    self.get_message(user_id, 'btn_back_menu'),
-                    callback_data="main_menu"
-                )])
                 
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await query.edit_message_text(message, reply_markup=reply_markup)
@@ -1692,23 +1705,17 @@ class ShoppingBot:
                 hebrew_name=result['hebrew_name']
             )
             
+            import urllib.parse
             keyboard = [
                 [InlineKeyboardButton(
-                    self.get_message(user_id, 'search_add_existing'),
-                    callback_data=f"search_add_{result['category_key']}_{result['item_name']}"
+                    "✅ ADD TO THE LIST",
+                    callback_data=f"search_add_{result['category_key']}_{urllib.parse.quote(result['item_name'])}"
+                )],
+                [InlineKeyboardButton(
+                    self.get_message(user_id, 'btn_back_menu'),
+                    callback_data="main_menu"
                 )]
             ]
-            
-            if not self.db.is_user_admin(user_id):
-                keyboard.append([InlineKeyboardButton(
-                    self.get_message(user_id, 'search_suggest_new'),
-                    callback_data=f"search_suggest_{result['category_key']}"
-                )])
-            
-            keyboard.append([InlineKeyboardButton(
-                self.get_message(user_id, 'btn_back_menu'),
-                callback_data="main_menu"
-            )])
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(message, reply_markup=reply_markup)
@@ -1721,10 +1728,11 @@ class ShoppingBot:
             )
             
             keyboard = []
+            import urllib.parse
             for result in results[:10]:  # Limit to 10 results
                 keyboard.append([InlineKeyboardButton(
                     f"{result['category_emoji']} {result['item_name']} ({result['category']})",
-                    callback_data=f"search_select_{result['category_key']}_{result['item_name']}"
+                    callback_data=f"search_select_{result['category_key']}_{urllib.parse.quote(result['item_name'])}"
                 )])
             
             keyboard.append([InlineKeyboardButton(
@@ -1739,18 +1747,23 @@ class ShoppingBot:
         """Show no results message with options"""
         user_id = update.effective_user.id
         
-        message = self.get_message(user_id, 'search_no_results').format(query=query)
+        # Debug: Check if message exists
+        try:
+            message = self.get_message(user_id, 'search_no_results').format(query=query)
+        except Exception as e:
+            message = f"🔍 NO RESULTS FOUND\n\nNo items found matching '{query}'.\n\nWould you like to:"
+            logging.error(f"Error getting search_no_results message: {e}")
         
         keyboard = []
         
         if not self.db.is_user_admin(user_id):
             keyboard.append([InlineKeyboardButton(
-                self.get_message(user_id, 'search_suggest_new'),
+                "💡 Suggest New Item",
                 callback_data="search_suggest_new"
             )])
         else:
             keyboard.append([InlineKeyboardButton(
-                self.get_message(user_id, 'btn_new_item'),
+                "➕ ADD NEW ITEM",
                 callback_data="new_item_direct"
             )])
         
