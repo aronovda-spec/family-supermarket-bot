@@ -69,6 +69,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("users", self.users_command))
         self.application.add_handler(CommandHandler("authorize", self.authorize_command))
         self.application.add_handler(CommandHandler("addadmin", self.add_admin_command))
+        self.application.add_handler(CommandHandler("broadcast", self.broadcast_command))
         self.application.add_handler(CommandHandler("language", self.language_command))
         
         # Callback query handler for inline keyboards
@@ -140,6 +141,7 @@ class ShoppingBot:
         
         if self.db.is_user_admin(user_id):
             keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_reset_list')), KeyboardButton(self.get_message(user_id, 'btn_manage_users'))])
+            keyboard.insert(-1, [KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
@@ -268,6 +270,10 @@ class ShoppingBot:
               text == "👥 Manage Users" or text == "👥 נהל משתמשים"):
             await self.users_command(update, context)
             return
+        elif (text == self.get_message(user_id, 'btn_broadcast') or 
+              text == "📢 Broadcast" or text == "📢 שידור"):
+            await self.broadcast_command(update, context)
+            return
 
         # Handle custom item addition
         if context.user_data.get('waiting_for_item'):
@@ -279,6 +285,11 @@ class ShoppingBot:
             item_info = context.user_data.get('item_info')
             if item_info:
                 await self.process_item_with_note(update, context, item_info, text)
+            return
+        
+        # Handle broadcast message
+        if context.user_data.get('waiting_for_broadcast'):
+            await self.process_broadcast_message(update, context, text)
             return
 
     async def process_custom_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
@@ -1013,6 +1024,82 @@ class ShoppingBot:
                     )
                 except Exception as e:
                     logger.warning(f"Could not notify user {db_user['user_id']}: {e}")
+
+    async def broadcast_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /broadcast command - send message to all authorized users"""
+        if not self.db.is_user_authorized(update.effective_user.id):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            return
+
+        # Check if user is admin or authorized
+        if not (self.db.is_user_admin(update.effective_user.id) or self.db.is_user_authorized(update.effective_user.id)):
+            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            return
+
+        # Set waiting for broadcast message
+        context.user_data['waiting_for_broadcast'] = True
+        
+        prompt_text = self.get_message(update.effective_user.id, 'broadcast_prompt')
+        await update.message.reply_text(prompt_text)
+
+    async def process_broadcast_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_text: str):
+        """Process broadcast message and send to all authorized users"""
+        user_id = update.effective_user.id
+        
+        if not message_text.strip():
+            await update.message.reply_text(self.get_message(user_id, 'broadcast_empty'))
+            return
+
+        # Get all authorized users
+        users = self.db.get_all_authorized_users()
+        
+        if not users:
+            await update.message.reply_text(self.get_message(user_id, 'broadcast_no_users'))
+            return
+
+        # Get sender info
+        sender_info = self.db.get_user_info(user_id)
+        sender_name = sender_info.get('first_name', '') or sender_info.get('username', '') or f"User {user_id}"
+        
+        # Send to all users
+        sent_count = 0
+        failed_count = 0
+        
+        for user in users:
+            try:
+                # Skip sending to self
+                if user['user_id'] == user_id:
+                    continue
+                    
+                # Format message based on user's language
+                user_lang = user.get('language', 'en')
+                broadcast_text = MESSAGES.get(user_lang, MESSAGES['en'])['broadcast_received'].format(
+                    sender=sender_name,
+                    message=message_text
+                )
+                
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text=broadcast_text
+                )
+                sent_count += 1
+                
+            except Exception as e:
+                logging.warning(f"Could not send broadcast to user {user['user_id']}: {e}")
+                failed_count += 1
+
+        # Save broadcast to history
+        self.db.save_broadcast_message(user_id, message_text, sent_count)
+        
+        # Send confirmation to sender
+        success_text = self.get_message(user_id, 'broadcast_sent').format(
+            count=sent_count,
+            message=message_text[:100] + "..." if len(message_text) > 100 else message_text
+        )
+        await update.message.reply_text(success_text)
+        
+        # Clear waiting state
+        context.user_data['waiting_for_broadcast'] = False
 
     async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /language command - show language selection"""
