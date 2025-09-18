@@ -1,6 +1,2 @@
-python-telegram-bot==20.7
-sqlite3
+python-telegram-bot==20.3
 python-dotenv==1.0.0
-datetime
-asyncio
-logging

@@ -48,7 +48,11 @@ MESSAGES = {
 /list - View current shopping list
 /summary - Get formatted shopping report
 /myitems - View items you've added
-/reset - 🔴 Reset the entire list (Admin only)
+
+**Admin Commands:**
+/reset - 🔴 Reset the entire list
+/users - 👥 Manage users and view status
+/authorize <user_id> - ✅ Authorize a new user
 
 **Quick Actions:**
 - Tap ✅ next to category items to add them
@@ -62,6 +66,7 @@ MESSAGES = {
 ✅ Duplicate handling with note merging
 ✅ Admin controls for deletion and reset
 ✅ Summary reports by category and user
+✅ User authorization system
     """,
     'not_registered': "❌ You need to be registered to use this bot. Please contact an admin to get access.",
     'admin_only': "❌ This command is only available to administrators.",
