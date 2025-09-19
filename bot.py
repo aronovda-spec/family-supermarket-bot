@@ -304,7 +304,7 @@ class ShoppingBot:
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_language'))])
-        keyboard.append([KeyboardButton("❓ Help")])
+        keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_help'))])
         
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
         
@@ -411,7 +411,7 @@ class ShoppingBot:
         # Get custom category info
         custom_category = self.db.get_custom_category(category_key)
         if not custom_category:
-            await update.callback_query.edit_message_text("Category not found!")
+            await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'category_not_found'))
             return
         
         keyboard = []
@@ -676,7 +676,7 @@ class ShoppingBot:
               text == "🔍 Search" or text == "🔍 חיפוש"):
             await self.search_command(update, context)
             return
-        elif text == "❓ Help":
+        elif text == self.get_message(user_id, 'btn_help'):
             await self.help_command(update, context)
             return
 
@@ -1779,7 +1779,7 @@ class ShoppingBot:
             list_id = int(data.replace("reset_list_", ""))
             if self.db.reset_list(list_id):
                 list_info = self.db.get_list_by_id(list_id)
-                list_name = list_info['name'] if list_info else f"List {list_id}"
+                list_name = list_info['name'] if list_info else self.get_message(update.effective_user.id, 'list_fallback').format(list_id=list_id)
                 message = self.get_message(update.effective_user.id, 'list_reset_items').format(list_name=list_name)
                 await query.edit_message_text(message)
                 
@@ -1910,19 +1910,19 @@ class ShoppingBot:
         if admins:
             message_parts.append("👑 **Admins:**")
             for user in admins:
-                name = user['first_name'] or user['username'] or f"User {user['user_id']}"
+                name = user['first_name'] or user['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user['user_id'])
                 message_parts.append(f"• {name} (ID: {user['user_id']})")
 
         if authorized:
             message_parts.append("\n✅ **Authorized Users:**")
             for user in authorized:
-                name = user['first_name'] or user['username'] or f"User {user['user_id']}"
+                name = user['first_name'] or user['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user['user_id'])
                 message_parts.append(f"• {name} (ID: {user['user_id']})")
 
         if unauthorized:
             message_parts.append("\n⏳ **Pending Authorization:**")
             for user in unauthorized:
-                name = user['first_name'] or user['username'] or f"User {user['user_id']}"
+                name = user['first_name'] or user['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user['user_id'])
                 message_parts.append(f"• {name} (ID: {user['user_id']})")
                 message_parts.append(f"  `/authorize {user['user_id']}`")
 
@@ -1980,7 +1980,7 @@ class ShoppingBot:
             return
 
         if user_info['is_authorized']:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_authorize}"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_authorize)
             await update.message.reply_text(f"✅ {user_name} is already authorized!")
             return
 
@@ -1994,8 +1994,8 @@ class ShoppingBot:
         )
 
         if success:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_authorize}"
-            admin_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_authorize)
+            admin_name = update.effective_user.first_name or update.effective_user.username or self.get_message(update.effective_user.id, 'admin_fallback')
             
             await update.message.reply_text(
                 f"✅ **User Authorized!**\n\n"
@@ -2054,7 +2054,7 @@ class ShoppingBot:
             return
 
         if user_info['is_admin']:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_promote}"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_promote)
             await update.message.reply_text(f"✅ {user_name} is already an admin!")
             return
 
@@ -2068,8 +2068,8 @@ class ShoppingBot:
         )
 
         if success:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_promote}"
-            admin_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_promote)
+            admin_name = update.effective_user.first_name or update.effective_user.username or self.get_message(update.effective_user.id, 'admin_fallback')
             
             await update.message.reply_text(
                 f"👑 **User Promoted to Admin!**\n\n"
@@ -2113,9 +2113,7 @@ class ShoppingBot:
         # Check if user_id was provided
         if not context.args:
             await update.message.reply_text(
-                f"❌ **Usage:** `/removeuser <user_id>`\n\n"
-                f"**Example:** `/removeuser 123456789`\n\n"
-                f"Use `/users` to see all users and their IDs.",
+                self.get_message(update.effective_user.id, 'usage_removeuser'),
                 parse_mode='Markdown'
             )
             return
@@ -2146,22 +2144,21 @@ class ShoppingBot:
             return
 
         if not user_info['is_authorized']:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_remove}"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_remove)
             await update.message.reply_text(
-                f"❌ **User Not Authorized**\n\n"
-                f"👤 {user_name} is not currently authorized.\n\n"
-                f"Use `/authorize {user_id_to_remove}` to authorize them first.",
+                self.get_message(update.effective_user.id, 'user_not_authorized').format(
+                    user_name=user_name, 
+                    user_id=user_id_to_remove
+                ),
                 parse_mode='Markdown'
             )
             return
 
         # Check if trying to remove an admin
         if user_info['is_admin']:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_remove}"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_remove)
             await update.message.reply_text(
-                f"❌ **Cannot Remove Admin**\n\n"
-                f"👤 {user_name} is an admin and cannot be removed.\n\n"
-                f"Use `/addadmin` to manage admin privileges.",
+                self.get_message(update.effective_user.id, 'cannot_remove_admin').format(user_name=user_name),
                 parse_mode='Markdown'
             )
             return
@@ -2170,8 +2167,8 @@ class ShoppingBot:
         success = self.db.remove_user_authorization(user_id_to_remove)
         
         if success:
-            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_remove}"
-            admin_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+            user_name = user_info['first_name'] or user_info['username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_to_remove)
+            admin_name = update.effective_user.first_name or update.effective_user.username or self.get_message(update.effective_user.id, 'admin_fallback')
             
             await update.message.reply_text(
                 f"✅ **User Authorization Removed**\n\n"
@@ -2202,7 +2199,7 @@ class ShoppingBot:
                                     promoted_user_name: str, promoted_user_id: int):
         """Notify other admins about user promotion"""
         user_id = update.effective_user.id
-        promoter_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+        promoter_name = update.effective_user.first_name or update.effective_user.username or self.get_message(update.effective_user.id, 'admin_fallback')
         message = (
             f"👑 **New Admin Promoted**\n\n"
             f"👤 **{promoted_user_name}** (ID: `{promoted_user_id}`)\n"
@@ -2227,8 +2224,8 @@ class ShoppingBot:
 
     async def notify_admins_new_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user):
         """Notify admins about new user request"""
-        user_name = user.first_name or user.username or f"User {user.id}"
-        username_display = f"@{user.username}" if user.username else "None"
+        user_name = user.first_name or user.username or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user.id)
+        username_display = f"@{user.username}" if user.username else self.get_message(update.effective_user.id, 'none_fallback')
         message = (
             f"👤 <b>New User Request</b>\n\n"
             f"Name: {user_name}\n"
@@ -2258,7 +2255,7 @@ class ShoppingBot:
                                     item_name: str, note: str = None):
         """Notify other users when an item is added"""
         user = update.effective_user
-        user_name = user.first_name or user.username or "Someone"
+        user_name = user.first_name or user.username or self.get_message(update.effective_user.id, 'someone_fallback')
         
         note_text = f" (Note: {note})" if note else ""
         message = f"🔔 {user_name} added: **{item_name}**{note_text}"
@@ -2279,7 +2276,7 @@ class ShoppingBot:
     async def notify_users_list_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Notify all users when list is reset"""
         user = update.effective_user
-        user_name = user.first_name or user.username or "Admin"
+        user_name = user.first_name or user.username or self.get_message(update.effective_user.id, 'admin_fallback')
         
         message = f"🗑️ **Shopping list reset by {user_name}**\n\nThe list is now empty and ready for new items!"
         
@@ -2330,7 +2327,7 @@ class ShoppingBot:
 
         # Get sender info
         sender_info = self.db.get_user_info(user_id)
-        sender_name = sender_info.get('first_name', '') or sender_info.get('username', '') or f"User {user_id}"
+        sender_name = sender_info.get('first_name', '') or sender_info.get('username', '') or self.get_message(user_id, 'user_fallback').format(user_id=user_id)
         
         # Send to all users
         sent_count = 0
@@ -2534,7 +2531,7 @@ class ShoppingBot:
             return
 
         list_info = self.db.get_list_by_id(list_id)
-        list_name = list_info['name'] if list_info else f"List {list_id}"
+        list_name = list_info['name'] if list_info else self.get_message(update.effective_user.id, 'list_fallback').format(list_id=list_id)
         
         # Get pending item suggestions for this list
         item_suggestions = self.db.get_pending_suggestions(list_id)
@@ -2575,7 +2572,7 @@ class ShoppingBot:
         
         if not suggestions:
             list_info = self.db.get_list_by_id(list_id)
-            list_name = list_info['name'] if list_info else f"List {list_id}"
+            list_name = list_info['name'] if list_info else self.get_message(update.effective_user.id, 'list_fallback').format(list_id=list_id)
             
             keyboard = [[InlineKeyboardButton("🏠 Back to Suggestions", callback_data=f"manage_suggestions_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2595,9 +2592,9 @@ class ShoppingBot:
         user_id = update.effective_user.id
         category_name = self.get_category_name(user_id, suggestion['category_key'])
         list_info = self.db.get_list_by_id(list_id)
-        list_name = list_info['name'] if list_info else f"List {list_id}"
+        list_name = list_info['name'] if list_info else self.get_message(update.effective_user.id, 'list_fallback').format(list_id=list_id)
         
-        message = f"💡 SUGGESTION REVIEW ({current_index + 1}/{total_count})\n\n"
+        message = f"{self.get_message(user_id, 'suggestion_review')} ({current_index + 1}/{total_count})\n\n"
         message += f"📋 List: {list_name}\n"
         message += f"📝 Item: {suggestion['item_name_en']}\n"
         message += f"🌐 Hebrew: {suggestion['item_name_he']}\n"
@@ -2636,7 +2633,7 @@ class ShoppingBot:
         user_id = update.effective_user.id
         category_name = self.get_category_name(user_id, suggestion['category_key'])
         
-        message = f"💡 SUGGESTION REVIEW ({current_index + 1}/{total_count})\n\n"
+        message = f"{self.get_message(user_id, 'suggestion_review')} ({current_index + 1}/{total_count})\n\n"
         message += f"📝 Item: {suggestion['item_name_en']}\n"
         message += f"🌐 Hebrew: {suggestion['item_name_he']}\n"
         message += f"📂 Category: {category_name}\n"
@@ -2844,11 +2841,11 @@ class ShoppingBot:
             # Search within specific list
             results = self.search_items_in_list(search_query.strip(), search_list_id, user_id)
             list_info = self.db.get_list_by_id(search_list_id)
-            list_name = list_info['name'] if list_info else f"List {search_list_id}"
+            list_name = list_info['name'] if list_info else self.get_message(user_id, 'list_fallback').format(list_id=search_list_id)
         else:
             # General search (for backward compatibility)
             results = self.search_items(search_query.strip(), user_id)
-            list_name = "all lists"
+            list_name = self.get_message(user_id, 'all_lists')
         
         if results:
             await self.show_search_results(update, context, search_query.strip(), results, list_name)
@@ -2926,7 +2923,7 @@ class ShoppingBot:
         
         return results
 
-    async def show_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, results: List[Dict], list_name: str = "all lists"):
+    async def show_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, results: List[Dict], list_name: str = None):
         """Show search results"""
         user_id = update.effective_user.id
         
@@ -3011,7 +3008,7 @@ class ShoppingBot:
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(message, reply_markup=reply_markup)
 
-    async def show_no_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, list_name: str = "all lists"):
+    async def show_no_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, list_name: str = None):
         """Show no results message with options"""
         user_id = update.effective_user.id
         
@@ -3493,7 +3490,7 @@ class ShoppingBot:
             for user_id_val, count in sorted(user_counts.items(), key=lambda x: x[1], reverse=True):
                 # Get user name from database
                 user_info = self.db.get_user_by_id(user_id_val)
-                user_name = user_info.get('first_name') or user_info.get('username') or f"User {user_id_val}"
+                user_name = user_info.get('first_name') or user_info.get('username') or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_val)
                 stats_message += f"• {user_name}: {count}\n"
         
         keyboard = [[InlineKeyboardButton("🏠 Back to List Actions", callback_data=f"list_actions_{list_id}")]]
@@ -3723,7 +3720,7 @@ class ShoppingBot:
             
             await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text("Failed to remove item. Please try again.")
+            await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'remove_item_failed'))
     
     
     
@@ -3881,7 +3878,7 @@ class ShoppingBot:
         target_list = None
         
         # Special handling for supermarket list (by name or by type)
-        if list_name == self.get_message(user_id, 'supermarket_list') or list_name == "Supermarket List":
+        if list_name == self.get_message(user_id, 'supermarket_list') or list_name == self.get_message(user_id, 'supermarket_list_en'):
             # Find supermarket list by type (more reliable than name)
             for list_info in all_lists:
                 if list_info['list_type'] == 'supermarket':
@@ -3937,8 +3934,8 @@ class ShoppingBot:
         item_count = len(items)
         
         message = f"📋 **{list_name}**\n\n"
-        message += f"Items: {item_count}\n"
-        message += f"Type: {target_list['list_type'].title()}\n\n"
+        message += self.get_message(user_id, 'items_count').format(count=item_count) + "\n"
+        message += self.get_message(user_id, 'list_type').format(type=target_list['list_type'].title()) + "\n\n"
         message += self.get_message(user_id, 'choose_action')
         
         if update.message:
@@ -3969,10 +3966,10 @@ class ShoppingBot:
                 categories[category].append(item)
             
             message = f"📋 **{list_info['name']}** Summary\n\n"
-            message += f"Total items: {len(items)}\n\n"
+            message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
             
             for category, category_items in categories.items():
-                message += f"**{category}** ({len(category_items)} items):\n"
+                message += f"**{category}** {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
                 for item in category_items:
                     message += f"• {item['name']}"
                     if item['notes']:
@@ -4001,7 +3998,7 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         message = f"🔍 **Search in {list_info['name']}**\n\n"
-        message += "Type the name of an item you want to search for:"
+        message += self.get_message(user_id, 'search_prompt')
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
         
@@ -4990,7 +4987,7 @@ class ShoppingBot:
         
         category = self.db.get_custom_category(category_key)
         if not category:
-            await update.callback_query.answer("Category not found!")
+            await update.callback_query.answer(self.get_message(update.effective_user.id, 'category_not_found'))
             return
         
         message = f"📂 **{category['name_en']}** ({category['name_he']})\n\n"
@@ -5018,7 +5015,7 @@ class ShoppingBot:
         
         category = self.db.get_custom_category(category_key)
         if not category:
-            await update.callback_query.answer("Category not found!")
+            await update.callback_query.answer(self.get_message(update.effective_user.id, 'category_not_found'))
             return
         
         message = self.get_message(user_id, 'confirm_delete_category').format(
@@ -5045,7 +5042,7 @@ class ShoppingBot:
         
         category = self.db.get_custom_category(category_key)
         if not category:
-            await update.callback_query.answer("Category not found!")
+            await update.callback_query.answer(self.get_message(update.effective_user.id, 'category_not_found'))
             return
         
         success = self.db.delete_custom_category(category_key)
@@ -5290,7 +5287,7 @@ class ShoppingBot:
             keyboard = []
             
             for suggestion in suggestions:
-                suggested_by = suggestion['suggested_by_first_name'] or suggestion['suggested_by_username'] or f"User {suggestion['suggested_by']}"
+                suggested_by = suggestion['suggested_by_first_name'] or suggestion['suggested_by_username'] or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=suggestion['suggested_by'])
                 keyboard.append([InlineKeyboardButton(
                     f"{suggestion['emoji']} {suggestion['name_en']} ({suggestion['name_he']}) - by {suggested_by}",
                     callback_data=f"review_category_suggestion_{suggestion['id']}"
@@ -5336,9 +5333,9 @@ class ShoppingBot:
         
         for admin in admins:
             try:
-                admin_name = admin['first_name'] or admin['username'] or f"Admin {admin['user_id']}"
+                admin_name = admin['first_name'] or admin['username'] or self.get_message(admin['user_id'], 'admin_fallback')
                 suggested_by_name = self.db.get_user_info(suggested_by)
-                suggested_by_display = suggested_by_name['first_name'] if suggested_by_name else f"User {suggested_by}"
+                suggested_by_display = suggested_by_name['first_name'] if suggested_by_name else self.get_message(admin['user_id'], 'user_fallback').format(user_id=suggested_by)
                 
                 notification = f"💡 **New Category Suggestion**\n\n"
                 notification += f"**Category:** {emoji} {category_name} ({hebrew_name})\n"
