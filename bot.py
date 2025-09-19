@@ -262,6 +262,11 @@ class ShoppingBot:
         """Show dynamic main menu with list buttons"""
         user_id = update.effective_user.id
         
+        # Check if user is authorized
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            return
+        
         # Get all active lists
         all_lists = self.db.get_all_lists()
         
@@ -289,7 +294,10 @@ class ShoppingBot:
         
         # Add management buttons
         if self.db.is_user_admin(user_id):
-            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_admin_management')), KeyboardButton(self.get_message(user_id, 'btn_user_management'))])
+            # Get pending count for admin management badge
+            total_pending = self.db.get_total_pending_suggestions_count()
+            admin_management_text = f"{self.get_message(user_id, 'btn_admin_management')} ({total_pending})"
+            keyboard.append([KeyboardButton(admin_management_text)])
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_admin')), KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         elif self.db.is_user_authorized(user_id):
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_user_management'))])
@@ -749,7 +757,9 @@ class ShoppingBot:
             await self.show_admin_menu(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_admin_management') or 
-              text == "⚙️ Management" or text == "⚙️ ניהול"):
+              text == "⚙️ Management" or text == "⚙️ ניהול" or
+              text.startswith(self.get_message(user_id, 'btn_admin_management') + " (") or
+              text.startswith("⚙️ Management (") or text.startswith("⚙️ ניהול (")):
             await self.show_admin_management_menu(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_user_management') or 
@@ -4045,18 +4055,24 @@ class ShoppingBot:
                 await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
             return
         
+        # Get pending counts for badges
+        total_pending = self.db.get_total_pending_suggestions_count()
+        item_suggestions_pending = self.db.get_pending_item_suggestions_count()
+        category_suggestions_pending = self.db.get_pending_category_suggestions_count()
+        
+        # Create buttons with badges
         keyboard = [
             [InlineKeyboardButton("➕ New Item", callback_data="new_item_admin")],
             [InlineKeyboardButton("📝 Manage Items", callback_data="manage_items_admin")],
-            [InlineKeyboardButton("💡 Manage Items Suggested", callback_data="manage_suggestions")],
+            [InlineKeyboardButton(f"💡 Manage Items Suggested ({item_suggestions_pending})", callback_data="manage_suggestions")],
             [InlineKeyboardButton("📂 New Category", callback_data="new_category_admin")],
             [InlineKeyboardButton("🗂️ Manage Categories", callback_data="manage_categories")],
-            [InlineKeyboardButton("💭 Manage Categories Suggested", callback_data="manage_category_suggestions")],
+            [InlineKeyboardButton(f"💭 Manage Categories Suggested ({category_suggestions_pending})", callback_data="manage_category_suggestions")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = "⚙️ **Management**\n\nChoose what you want to manage:"
+        message = f"⚙️ **Management** ({total_pending})\n\nChoose what you want to manage:"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
