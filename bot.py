@@ -1794,13 +1794,14 @@ class ShoppingBot:
     async def notify_admins_new_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user):
         """Notify admins about new user request"""
         user_name = user.first_name or user.username or f"User {user.id}"
+        username_display = f"@{user.username}" if user.username else "None"
         message = (
-            f"👤 **New User Request**\n\n"
+            f"👤 <b>New User Request</b>\n\n"
             f"Name: {user_name}\n"
-            f"Username: @{user.username if user.username else 'None'}\n"
-            f"ID: `{user.id}`\n\n"
-            f"To authorize: `/authorize {user.id}`\n"
-            f"To view all users: `/users`"
+            f"Username: {username_display}\n"
+            f"ID: <code>{user.id}</code>\n\n"
+            f"To authorize: /authorize {user.id}\n"
+            f"To view all users: /users"
         )
         
         # Get all admin users
@@ -1811,7 +1812,7 @@ class ShoppingBot:
                     await context.bot.send_message(
                         chat_id=db_user['user_id'],
                         text=message,
-                        parse_mode='Markdown'
+                        parse_mode='HTML'
                     )
                 except Exception as e:
                     logger.warning(f"Could not notify admin {db_user['user_id']}: {e}")
