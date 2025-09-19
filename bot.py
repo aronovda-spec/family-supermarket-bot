@@ -1004,6 +1004,9 @@ class ShoppingBot:
         elif data == "my_summary":
             await self.summary_command(update, context)
         
+        elif data == "manage_users":
+            await self.users_command(update, context)
+        
         elif data == "categories":
             await self.show_categories(update, context)
         
