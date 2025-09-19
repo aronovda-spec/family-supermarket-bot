@@ -125,6 +125,9 @@ class Database:
                         VALUES (1, "Supermarket List", "Weekly family shopping list", "supermarket", 1)
                     ''')
                 
+                # Ensure supermarket list always exists and is protected
+                self._ensure_supermarket_list_protection(cursor)
+                
                 # Migration: Add list_id column to shopping_items if it doesn't exist
                 try:
                     cursor.execute('ALTER TABLE shopping_items ADD COLUMN list_id INTEGER DEFAULT 1')
@@ -150,6 +153,43 @@ class Database:
                 
         except Exception as e:
             logging.error(f"Error initializing database: {e}")
+
+    def _ensure_supermarket_list_protection(self, cursor):
+        """Ensure the supermarket list is always protected and exists"""
+        try:
+            # Check if supermarket list exists
+            cursor.execute('SELECT id, name, list_type FROM lists WHERE list_type = "supermarket"')
+            supermarket_list = cursor.fetchone()
+            
+            if not supermarket_list:
+                # Create supermarket list if it doesn't exist
+                cursor.execute('''
+                    INSERT INTO lists (id, name, description, list_type, created_by)
+                    VALUES (1, "Supermarket List", "Weekly family shopping list", "supermarket", 1)
+                ''')
+                logging.info("Created protected supermarket list")
+            else:
+                # Ensure it has the correct properties
+                list_id, name, list_type = supermarket_list
+                
+                # If somehow the list_type was changed, fix it
+                if list_type != 'supermarket':
+                    cursor.execute('UPDATE lists SET list_type = "supermarket" WHERE id = ?', (list_id,))
+                    logging.warning(f"Fixed supermarket list type for list {list_id}")
+                
+                # Ensure it has ID 1 (critical for maintenance mode and other features)
+                if list_id != 1:
+                    # Move the supermarket list to ID 1
+                    cursor.execute('UPDATE lists SET id = 1 WHERE list_type = "supermarket"')
+                    logging.warning(f"Moved supermarket list to ID 1")
+                
+                # Ensure it's always active
+                cursor.execute('UPDATE lists SET is_active = TRUE WHERE list_type = "supermarket"')
+                
+            logging.info("Supermarket list protection verified")
+            
+        except Exception as e:
+            logging.error(f"Error ensuring supermarket list protection: {e}")
 
     def add_user(self, user_id: int, username: str = None, first_name: str = None, 
                  last_name: str = None, is_admin: bool = False) -> bool:
@@ -660,18 +700,23 @@ class Database:
             return False
 
     def delete_list(self, list_id: int) -> Optional[str]:
-        """Delete a list (soft delete)"""
+        """Delete a list (soft delete) - with supermarket list protection"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Get list name before deletion
-                cursor.execute('SELECT name FROM lists WHERE id = ?', (list_id,))
+                # Check if this is the supermarket list
+                cursor.execute('SELECT name, list_type FROM lists WHERE id = ?', (list_id,))
                 result = cursor.fetchone()
                 if not result:
                     return None
                 
-                list_name = result[0]
+                list_name, list_type = result
+                
+                # PROTECTION: Never allow deletion of supermarket list
+                if list_type == 'supermarket':
+                    logging.warning(f"Attempted to delete protected supermarket list (ID: {list_id})")
+                    return "PROTECTED"  # Special return value to indicate protection
                 
                 # Soft delete the list
                 cursor.execute('UPDATE lists SET is_active = FALSE WHERE id = ?', (list_id,))
@@ -798,6 +843,29 @@ class Database:
     def get_supermarket_list(self) -> List[Dict]:
         """Get the supermarket list (list_id = 1)"""
         return self.get_shopping_list_by_id(1)
+    
+    def get_supermarket_list_id(self) -> int:
+        """Get the supermarket list ID safely (always returns 1, but verifies it exists)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM lists WHERE list_type = "supermarket" AND is_active = TRUE')
+                result = cursor.fetchone()
+                
+                if result:
+                    return result[0]
+                else:
+                    # If supermarket list doesn't exist, create it
+                    cursor.execute('''
+                        INSERT INTO lists (id, name, description, list_type, created_by)
+                        VALUES (1, "Supermarket List", "Weekly family shopping list", "supermarket", 1)
+                    ''')
+                    conn.commit()
+                    logging.warning("Created missing supermarket list")
+                    return 1
+        except Exception as e:
+            logging.error(f"Error getting supermarket list ID: {e}")
+            return 1  # Fallback to ID 1
     
     # Maintenance mode methods
     def set_maintenance_mode(self, list_id: int, scheduled_day: str, scheduled_time: str, created_by: int) -> bool:

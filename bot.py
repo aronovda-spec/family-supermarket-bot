@@ -1380,9 +1380,17 @@ class ShoppingBot:
         
         elif data.startswith("delete_list_"):
             list_id = int(data.replace("delete_list_", ""))
-            list_name = self.db.delete_list(list_id)
-            if list_name:
-                message = self.get_message(update.effective_user.id, 'list_deleted').format(list_name=list_name)
+            result = self.db.delete_list(list_id)
+            
+            if result == "PROTECTED":
+                # Supermarket list protection triggered
+                protected_message = self.get_message(update.effective_user.id, 'supermarket_protected').format(
+                    supermarket_list=self.get_message(update.effective_user.id, 'supermarket_list')
+                )
+                await query.edit_message_text(protected_message)
+            elif result:
+                # Successful deletion
+                message = self.get_message(update.effective_user.id, 'list_deleted').format(list_name=result)
                 await query.edit_message_text(message)
                 await self.show_main_menu(update, context)
             else:
@@ -3395,12 +3403,22 @@ class ShoppingBot:
         await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
     
     async def confirm_delete_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show delete list confirmation"""
+        """Show delete list confirmation (with supermarket list protection)"""
         user_id = update.effective_user.id
         list_info = self.db.get_list_by_id(list_id)
         
         if not list_info:
             await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        # PROTECTION: Never allow deletion of supermarket list
+        if list_info['list_type'] == 'supermarket':
+            protected_message = self.get_message(user_id, 'supermarket_protected').format(
+                supermarket_list=self.get_message(user_id, 'supermarket_list')
+            )
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="my_lists")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(protected_message, reply_markup=reply_markup)
             return
         
         items = self.db.get_shopping_list_by_id(list_id)
@@ -3531,13 +3549,23 @@ class ShoppingBot:
         """Show menu for a specific list with relevant options"""
         user_id = update.effective_user.id
         
-        # Find the list by name
+        # Find the list by name - with special handling for supermarket list
         all_lists = self.db.get_all_lists()
         target_list = None
-        for list_info in all_lists:
-            if list_info['name'] == list_name:
-                target_list = list_info
-                break
+        
+        # Special handling for supermarket list (by name or by type)
+        if list_name == self.get_message(user_id, 'supermarket_list') or list_name == "Supermarket List":
+            # Find supermarket list by type (more reliable than name)
+            for list_info in all_lists:
+                if list_info['list_type'] == 'supermarket':
+                    target_list = list_info
+                    break
+        else:
+            # Regular list lookup by name
+            for list_info in all_lists:
+                if list_info['name'] == list_name:
+                    target_list = list_info
+                    break
         
         if not target_list:
             if update.message:
