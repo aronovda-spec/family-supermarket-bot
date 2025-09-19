@@ -46,14 +46,33 @@ class ShoppingBot:
     def get_category_name(self, user_id: int, category_key: str) -> str:
         """Get localized category name"""
         lang = self.get_user_language(user_id)
+        
+        # Check predefined categories first
         category = CATEGORIES.get(category_key, {})
-        return category.get('name', {}).get(lang, category.get('name', {}).get('en', category_key))
+        if category:
+            return category.get('name', {}).get(lang, category.get('name', {}).get('en', category_key))
+        
+        # Check custom categories
+        custom_category = self.db.get_custom_category(category_key)
+        if custom_category:
+            if lang == 'he':
+                return custom_category['name_he']
+            else:
+                return custom_category['name_en']
+        
+        return category_key
 
     def get_category_items(self, user_id: int, category_key: str) -> List[str]:
         """Get localized category items"""
         lang = self.get_user_language(user_id)
+        
+        # Check predefined categories first
         category = CATEGORIES.get(category_key, {})
-        return category.get('items', {}).get(lang, category.get('items', {}).get('en', []))
+        if category:
+            return category.get('items', {}).get(lang, category.get('items', {}).get('en', []))
+        
+        # Custom categories don't have predefined items, return empty list
+        return []
 
     def setup_handlers(self):
         """Set up command and callback handlers"""
@@ -69,8 +88,13 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("users", self.users_command))
         self.application.add_handler(CommandHandler("authorize", self.authorize_command))
         self.application.add_handler(CommandHandler("addadmin", self.add_admin_command))
+        self.application.add_handler(CommandHandler("removeuser", self.remove_user_command))
         self.application.add_handler(CommandHandler("broadcast", self.broadcast_command))
         self.application.add_handler(CommandHandler("suggest", self.suggest_item_command))
+        self.application.add_handler(CommandHandler("newcategory", self.new_category_command))
+        self.application.add_handler(CommandHandler("managecategories", self.manage_categories_command))
+        self.application.add_handler(CommandHandler("suggestcategory", self.suggest_category_command))
+        self.application.add_handler(CommandHandler("managecategorysuggestions", self.manage_category_suggestions_command))
         self.application.add_handler(CommandHandler("managesuggestions", self.manage_suggestions_command))
         self.application.add_handler(CommandHandler("newitem", self.new_item_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
@@ -108,8 +132,13 @@ class ShoppingBot:
             BotCommand("users", "👥 Manage users (Admin)"),
             BotCommand("authorize", "✅ Authorize user (Admin)"),
             BotCommand("addadmin", "👑 Promote to admin (Admin)"),
+            BotCommand("removeuser", "❌ Remove user authorization (Admin)"),
             BotCommand("broadcast", "📢 Send message to all (Admin)"),
             BotCommand("suggest", "💡 Suggest new item"),
+            BotCommand("newcategory", "➕ Create new category (Admin)"),
+            BotCommand("managecategories", "📂 Manage categories (Admin)"),
+            BotCommand("suggestcategory", "💡 Suggest new category"),
+            BotCommand("managecategorysuggestions", "💡 Manage category suggestions (Admin)"),
             BotCommand("managesuggestions", "📝 Manage suggestions (Admin)"),
             BotCommand("newitem", "🆕 Add new item to category (Admin)"),
             BotCommand("reset", "🔄 Reset list (Admin)")
@@ -130,8 +159,13 @@ class ShoppingBot:
             BotCommand("users", "👥 נהל משתמשים (מנהל)"),
             BotCommand("authorize", "✅ אשר משתמש (מנהל)"),
             BotCommand("addadmin", "👑 קדם למנהל (מנהל)"),
+            BotCommand("removeuser", "❌ הסר הרשאות משתמש (מנהל)"),
             BotCommand("broadcast", "📢 שלח הודעה לכולם (מנהל)"),
             BotCommand("suggest", "💡 הצע פריט חדש"),
+            BotCommand("newcategory", "➕ צור קטגוריה חדשה (מנהל)"),
+            BotCommand("managecategories", "📂 נהל קטגוריות (מנהל)"),
+            BotCommand("suggestcategory", "💡 הצע קטגוריה חדשה"),
+            BotCommand("managecategorysuggestions", "💡 נהל הצעות קטגוריות (מנהל)"),
             BotCommand("managesuggestions", "📝 נהל הצעות (מנהל)"),
             BotCommand("newitem", "🆕 הוסף פריט חדש לקטגוריה (מנהל)"),
             BotCommand("reset", "🔄 אפס רשימה (מנהל)")
@@ -235,6 +269,10 @@ class ShoppingBot:
         # Add action buttons
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_new_list'))])
         
+        # Add suggest category button for all authorized users
+        if self.db.is_user_authorized(user_id):
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_suggest_category'))])
+        
         # Add admin and utility buttons
         if self.db.is_user_admin(user_id):
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_admin')), KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
@@ -265,11 +303,22 @@ class ShoppingBot:
         """Show categories for selection"""
         user_id = update.effective_user.id
         keyboard = []
+        
+        # Add predefined categories
         for category_key, category_data in CATEGORIES.items():
             category_name = self.get_category_name(user_id, category_key)
             keyboard.append([InlineKeyboardButton(
                 f"{category_data['emoji']} {category_name}", 
                 callback_data=f"category_{category_key}"
+            )])
+        
+        # Add custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            keyboard.append([InlineKeyboardButton(
+                f"{category['emoji']} {category_name}", 
+                callback_data=f"category_{category['category_key']}"
             )])
         
         keyboard.append([InlineKeyboardButton(
@@ -288,7 +337,19 @@ class ShoppingBot:
     async def show_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
         """Show items in a specific category"""
         user_id = update.effective_user.id
+        
+        # Check if it's a predefined category
         category_data = CATEGORIES.get(category_key)
+        if category_data:
+            # Handle predefined category
+            await self.show_predefined_category_items(update, context, category_key, category_data)
+        else:
+            # Handle custom category
+            await self.show_custom_category_items(update, context, category_key)
+    
+    async def show_predefined_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, category_data: dict):
+        """Show items in a predefined category"""
+        user_id = update.effective_user.id
         if not category_data:
             return
 
@@ -316,6 +377,35 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         category_name = self.get_category_name(user_id, category_key)
         text = f"{category_data['emoji']} {category_name}\n\nTap ✅ to add items to your shopping list:"
+        
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    
+    async def show_custom_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Show items in a custom category"""
+        user_id = update.effective_user.id
+        
+        # Get custom category info
+        custom_category = self.db.get_custom_category(category_key)
+        if not custom_category:
+            await update.callback_query.edit_message_text("Category not found!")
+            return
+        
+        keyboard = []
+        
+        # Custom categories don't have predefined items, so just show the "ADD NEW ITEM" button
+        keyboard.append([InlineKeyboardButton(
+            "➕ ADD NEW ITEM",
+            callback_data=f"add_new_item_{category_key}"
+        )])
+
+        keyboard.append([
+            InlineKeyboardButton(self.get_message(user_id, 'btn_back_categories'), callback_data="categories"),
+            InlineKeyboardButton(self.get_message(user_id, 'btn_main_menu'), callback_data="main_menu")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        category_name = self.get_category_name(user_id, category_key)
+        text = f"{custom_category['emoji']} {category_name}\n\nThis is a custom category. Tap ➕ to add new items:"
         
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
@@ -463,6 +553,7 @@ class ShoppingBot:
             return
 
         context.user_data['waiting_for_item'] = True
+        user_id = update.effective_user.id
         await update.message.reply_text(
             f"✏️ **{self.get_message(user_id, 'btn_add_item')}**\n\n"
             f"{self.get_message(user_id, 'add_custom_item_prompt')}",
@@ -477,6 +568,36 @@ class ShoppingBot:
 
         text = update.message.text.strip()
         user_id = update.effective_user.id
+        
+        # Handle category creation text input
+        if context.user_data.get('creating_category'):
+            if context.user_data.get('category_name') is None:
+                # User is entering category name
+                await self.process_category_name(update, context, text)
+                return
+            elif context.user_data.get('category_emoji') is None:
+                # User is entering custom emoji (not from buttons)
+                await self.process_category_emoji(update, context, text)
+                return
+            elif context.user_data.get('category_hebrew') is None:
+                # User is entering Hebrew translation
+                await self.process_category_hebrew(update, context, text)
+                return
+        
+        # Handle category suggestion text input
+        if context.user_data.get('suggesting_category'):
+            if context.user_data.get('suggest_category_name') is None:
+                # User is entering category name
+                await self.process_suggest_category_name(update, context, text)
+                return
+            elif context.user_data.get('suggest_category_emoji') is None:
+                # User is entering custom emoji (not from buttons)
+                await self.process_suggest_category_emoji(update, context, text)
+                return
+            elif context.user_data.get('suggest_category_hebrew') is None:
+                # User is entering Hebrew translation
+                await self.process_suggest_category_hebrew(update, context, text)
+                return
         
         # Handle main menu buttons - check both English and Hebrew
         if (text == self.get_message(user_id, 'btn_categories') or 
@@ -599,6 +720,10 @@ class ShoppingBot:
         elif (text == self.get_message(user_id, 'btn_new_list') or 
               text == "➕ New List" or text == "➕ רשימה חדשה"):
             await self.new_list_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_suggest_category') or 
+              text == "💡 Suggest Category" or text == "💡 הצע קטגוריה"):
+            await self.suggest_category_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_my_lists') or 
               text == "📋 My Lists" or text == "📋 הרשימות שלי"):
@@ -957,8 +1082,9 @@ class ShoppingBot:
 
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /reset command - reset shopping list (admin only)"""
-        if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+        user_id = update.effective_user.id
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
@@ -1009,6 +1135,58 @@ class ShoppingBot:
         
         elif data == "categories":
             await self.show_categories(update, context)
+        
+        # Category creation callbacks
+        elif data == "cancel_category_creation":
+            await self.cancel_category_creation(update, context)
+        
+        elif data.startswith("emoji_"):
+            emoji = data.replace("emoji_", "")
+            await self.process_category_emoji(update, context, emoji)
+        
+        elif data == "skip_hebrew_translation":
+            await self.create_custom_category(update, context)
+        
+        elif data.startswith("view_category_"):
+            category_key = data.replace("view_category_", "")
+            await self.show_category_details(update, context, category_key)
+        
+        elif data.startswith("delete_category_"):
+            category_key = data.replace("delete_category_", "")
+            await self.confirm_delete_category(update, context, category_key)
+        
+        elif data.startswith("confirm_delete_category_"):
+            category_key = data.replace("confirm_delete_category_", "")
+            await self.delete_custom_category(update, context, category_key)
+        
+        elif data == "new_category":
+            await self.start_category_creation(update, context)
+        
+        elif data == "manage_categories":
+            await self.show_manage_categories(update, context)
+        
+        # Category suggestion callbacks
+        elif data == "cancel_category_suggestion":
+            await self.cancel_category_suggestion(update, context)
+        
+        elif data.startswith("suggest_emoji_"):
+            emoji = data.replace("suggest_emoji_", "")
+            await self.process_suggest_category_emoji(update, context, emoji)
+        
+        elif data == "skip_suggest_hebrew_translation":
+            await self.submit_category_suggestion(update, context)
+        
+        elif data.startswith("review_category_suggestion_"):
+            suggestion_id = int(data.replace("review_category_suggestion_", ""))
+            await self.show_category_suggestion_review(update, context, suggestion_id)
+        
+        elif data.startswith("approve_category_suggestion_"):
+            suggestion_id = int(data.replace("approve_category_suggestion_", ""))
+            await self.approve_category_suggestion(update, context, suggestion_id)
+        
+        elif data.startswith("reject_category_suggestion_"):
+            suggestion_id = int(data.replace("reject_category_suggestion_", ""))
+            await self.reject_category_suggestion(update, context, suggestion_id)
         
         elif data.startswith("category_"):
             category_key = data.replace("category_", "")
@@ -1310,6 +1488,10 @@ class ShoppingBot:
         elif data.startswith("manage_suggestions_"):
             list_id = int(data.replace("manage_suggestions_", ""))
             await self.show_manage_suggestions_for_list(update, context, list_id)
+        
+        elif data.startswith("manage_item_suggestions_"):
+            list_id = int(data.replace("manage_item_suggestions_", ""))
+            await self.show_item_suggestions_for_list(update, context, list_id)
         
         elif data.startswith("list_actions_"):
             list_id = int(data.replace("list_actions_", ""))
@@ -1628,8 +1810,9 @@ class ShoppingBot:
 
     async def authorize_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /authorize command - authorize a user (admin only)"""
-        if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+        user_id = update.effective_user.id
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
@@ -1701,8 +1884,9 @@ class ShoppingBot:
 
     async def add_admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /addadmin command - promote user to admin (admin only)"""
-        if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+        user_id = update.effective_user.id
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
@@ -1780,6 +1964,105 @@ class ShoppingBot:
         else:
             await update.message.reply_text("❌ Error promoting user to admin. Please try again.")
 
+    async def remove_user_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /removeuser command - remove user authorization (admin only)"""
+        user_id = update.effective_user.id
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            return
+
+        if not self.db.is_user_admin(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            return
+
+        # Check if user_id was provided
+        if not context.args:
+            await update.message.reply_text(
+                f"❌ **Usage:** `/removeuser <user_id>`\n\n"
+                f"**Example:** `/removeuser 123456789`\n\n"
+                f"Use `/users` to see all users and their IDs.",
+                parse_mode='Markdown'
+            )
+            return
+
+        try:
+            user_id_to_remove = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(
+                f"❌ Invalid user ID. Please provide a valid number.\n\n"
+                f"**Example:** `/removeuser 123456789`",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Check if trying to remove self
+        if user_id_to_remove == user_id:
+            await update.message.reply_text("❌ You cannot remove yourself!")
+            return
+
+        # Check if user exists in database
+        user_info = self.db.get_user_info(user_id_to_remove)
+        if not user_info:
+            await update.message.reply_text(
+                f"❌ User ID `{user_id_to_remove}` not found.\n\n"
+                f"{self.get_message(user_id, 'users_must_start_first')}",
+                parse_mode='Markdown'
+            )
+            return
+
+        if not user_info['is_authorized']:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_remove}"
+            await update.message.reply_text(
+                f"❌ **User Not Authorized**\n\n"
+                f"👤 {user_name} is not currently authorized.\n\n"
+                f"Use `/authorize {user_id_to_remove}` to authorize them first.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Check if trying to remove an admin
+        if user_info['is_admin']:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_remove}"
+            await update.message.reply_text(
+                f"❌ **Cannot Remove Admin**\n\n"
+                f"👤 {user_name} is an admin and cannot be removed.\n\n"
+                f"Use `/addadmin` to manage admin privileges.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Remove user authorization
+        success = self.db.remove_user_authorization(user_id_to_remove)
+        
+        if success:
+            user_name = user_info['first_name'] or user_info['username'] or f"User {user_id_to_remove}"
+            admin_name = update.effective_user.first_name or update.effective_user.username or "Admin"
+            
+            await update.message.reply_text(
+                f"✅ **User Authorization Removed**\n\n"
+                f"👤 {user_name} can no longer use the shopping bot.\n\n"
+                f"🔑 **What happens:**\n"
+                f"• User loses access to all bot features\n"
+                f"• Must be re-authorized to use the bot\n"
+                f"• Their shopping items remain in the database",
+                parse_mode='Markdown'
+            )
+            
+            # Notify the removed user
+            try:
+                await self.application.bot.send_message(
+                    chat_id=user_id_to_remove,
+                    text=f"❌ **Access Revoked**\n\n"
+                         f"Your access to the Family Shopping List Bot has been revoked by an admin.\n\n"
+                         f"Contact an admin if you need access restored.",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logging.warning(f"Could not notify removed user {user_id_to_remove}: {e}")
+
+        else:
+            await update.message.reply_text("❌ Error removing user authorization. Please try again.")
+
     async def notify_admins_promotion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                     promoted_user_name: str, promoted_user_id: int):
         """Notify other admins about user promotion"""
@@ -1816,8 +2099,11 @@ class ShoppingBot:
             f"Name: {user_name}\n"
             f"Username: {username_display}\n"
             f"ID: <code>{user.id}</code>\n\n"
-            f"To authorize: /authorize {user.id}\n"
-            f"To view all users: /users"
+            f"🔧 <b>Admin Commands:</b>\n"
+            f"• /authorize {user.id} - Authorize this user\n"
+            f"• /removeuser {user.id} - Remove user authorization\n"
+            f"• /addadmin {user.id} - Promote to admin\n"
+            f"• /users - View all users"
         )
         
         # Get all admin users
@@ -2066,8 +2352,9 @@ class ShoppingBot:
 
     async def manage_suggestions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /managesuggestions command - show pending suggestions for admin review"""
-        if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+        user_id = update.effective_user.id
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
@@ -2084,9 +2371,48 @@ class ShoppingBot:
         await self.show_suggestion_review(update, context, suggestions[0], 0, len(suggestions))
 
     async def show_manage_suggestions_for_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show pending suggestions for a specific list"""
-        if not self.db.is_user_admin(update.effective_user.id):
-            await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'admin_only'))
+        """Show consolidated suggestions management (items + categories)"""
+        user_id = update.effective_user.id
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+
+        list_info = self.db.get_list_by_id(list_id)
+        list_name = list_info['name'] if list_info else f"List {list_id}"
+        
+        # Get pending item suggestions for this list
+        item_suggestions = self.db.get_pending_suggestions(list_id)
+        
+        # Get pending category suggestions
+        category_suggestions = self.db.get_pending_category_suggestions()
+        
+        message = f"💡 **Manage Suggestions - {list_name}**\n\n"
+        
+        if not item_suggestions and not category_suggestions:
+            message += "📝 No pending suggestions."
+            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+        else:
+            message += f"📊 **Pending Suggestions:**\n"
+            if item_suggestions:
+                message += f"• 📦 Items: {len(item_suggestions)}\n"
+            if category_suggestions:
+                message += f"• 📂 Categories: {len(category_suggestions)}\n"
+            
+            keyboard = []
+            if item_suggestions:
+                keyboard.append([InlineKeyboardButton("📦 Manage Item Suggestions", callback_data=f"manage_item_suggestions_{list_id}")])
+            if category_suggestions:
+                keyboard.append([InlineKeyboardButton("📂 Manage Category Suggestions", callback_data="manage_category_suggestions")])
+            keyboard.append([InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_item_suggestions_for_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show item suggestions for a specific list"""
+        user_id = update.effective_user.id
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
             return
 
         suggestions = self.db.get_pending_suggestions(list_id)
@@ -2095,10 +2421,10 @@ class ShoppingBot:
             list_info = self.db.get_list_by_id(list_id)
             list_name = list_info['name'] if list_info else f"List {list_id}"
             
-            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+            keyboard = [[InlineKeyboardButton("🏠 Back to Suggestions", callback_data=f"manage_suggestions_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            message = f"💡 **Manage Suggestions for {list_name}**\n\n"
+            message = f"📦 **Item Suggestions for {list_name}**\n\n"
             message += self.get_message(user_id, 'no_pending_suggestions')
             
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -3028,6 +3354,12 @@ class ShoppingBot:
                 callback_data=f"delete_permanent_items_{list_id}"
             )])
             
+            # Add category management option for admins
+            keyboard.append([InlineKeyboardButton(
+                "📂 Manage Categories", 
+                callback_data="manage_categories"
+            )])
+            
             # Add back button
             keyboard.append([InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")])
             
@@ -3066,6 +3398,12 @@ class ShoppingBot:
         keyboard.append([InlineKeyboardButton(
             "🗑️ Delete Permanent Items", 
             callback_data=f"delete_permanent_items_{list_id}"
+        )])
+        
+        # Add category management option for admins
+        keyboard.append([InlineKeyboardButton(
+            "📂 Manage Categories", 
+            callback_data="manage_categories"
         )])
         
         # Add back button
@@ -3779,6 +4117,9 @@ class ShoppingBot:
         keyboard = [
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_users'), callback_data="manage_users")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_new_category'), callback_data="new_category")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_categories'), callback_data="manage_categories")],
+            [InlineKeyboardButton("💡 Manage Category Suggestions", callback_data="manage_category_suggestions")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -3982,6 +4323,731 @@ class ShoppingBot:
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
     
+    # Category Creation Methods
+    async def new_category_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /newcategory command - Create a new custom category (admin only)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_admin(user_id):
+            await update.message.reply_text("❌ Only admins can create new categories.")
+            return
+        
+        await self.start_category_creation(update, context)
+    
+    async def manage_categories_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /managecategories command - Manage custom categories (admin only)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_admin(user_id):
+            await update.message.reply_text("❌ Only admins can manage categories.")
+            return
+        
+        await self.show_manage_categories(update, context)
+    
+    async def start_category_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start the category creation process"""
+        user_id = update.effective_user.id
+        
+        # Clear any previous category creation data
+        context.user_data.pop('creating_category', None)
+        context.user_data.pop('category_name', None)
+        context.user_data.pop('category_emoji', None)
+        context.user_data.pop('category_hebrew', None)
+        
+        # Set flag to indicate we're creating a category
+        context.user_data['creating_category'] = True
+        
+        message = self.get_message(user_id, 'new_category_title')
+        
+        # Add cancel button
+        keyboard = [[InlineKeyboardButton(
+            self.get_message(user_id, 'btn_cancel'),
+            callback_data="cancel_category_creation"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup)
+    
+    async def process_category_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_name: str):
+        """Process category name input"""
+        user_id = update.effective_user.id
+        
+        if not category_name.strip():
+            await update.message.reply_text("❌ Please provide a category name.")
+            return
+        
+        # Check if category already exists (in predefined or custom)
+        category_key = category_name.lower().replace(' ', '_').replace('-', '_')
+        
+        # Check predefined categories
+        if category_key in CATEGORIES:
+            await update.message.reply_text(
+                self.get_message(user_id, 'category_already_exists').format(category_name=category_name)
+            )
+            return
+        
+        # Check custom categories
+        if self.db.get_custom_category(category_key):
+            await update.message.reply_text(
+                self.get_message(user_id, 'category_already_exists').format(category_name=category_name)
+            )
+            return
+        
+        # Store category name and ask for emoji
+        context.user_data['category_name'] = category_name.strip()
+        context.user_data['category_key'] = category_key
+        
+        await self.ask_for_category_emoji(update, context)
+    
+    async def ask_for_category_emoji(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ask user to choose an emoji for the category"""
+        user_id = update.effective_user.id
+        category_name = context.user_data.get('category_name', '')
+        
+        message = self.get_message(user_id, 'new_category_emoji').format(category_name=category_name)
+        
+        # Add common emoji buttons
+        keyboard = [
+            [InlineKeyboardButton("📱", callback_data="emoji_📱"),
+             InlineKeyboardButton("💻", callback_data="emoji_💻"),
+             InlineKeyboardButton("🎮", callback_data="emoji_🎮"),
+             InlineKeyboardButton("📚", callback_data="emoji_📚")],
+            [InlineKeyboardButton("🏠", callback_data="emoji_🏠"),
+             InlineKeyboardButton("🚗", callback_data="emoji_🚗"),
+             InlineKeyboardButton("✈️", callback_data="emoji_✈️"),
+             InlineKeyboardButton("🎉", callback_data="emoji_🎉")],
+            [InlineKeyboardButton("🎨", callback_data="emoji_🎨"),
+             InlineKeyboardButton("🎵", callback_data="emoji_🎵"),
+             InlineKeyboardButton("🏃", callback_data="emoji_🏃"),
+             InlineKeyboardButton("🍽️", callback_data="emoji_🍽️")],
+            [InlineKeyboardButton("📦", callback_data="emoji_📦"),
+             InlineKeyboardButton("🔧", callback_data="emoji_🔧"),
+             InlineKeyboardButton("💡", callback_data="emoji_💡"),
+             InlineKeyboardButton("⭐", callback_data="emoji_⭐")],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_cancel'),
+                callback_data="cancel_category_creation"
+            )]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def process_category_emoji(self, update: Update, context: ContextTypes.DEFAULT_TYPE, emoji: str):
+        """Process emoji selection"""
+        user_id = update.effective_user.id
+        
+        # Store emoji and ask for Hebrew translation
+        context.user_data['category_emoji'] = emoji
+        
+        await self.ask_for_category_hebrew(update, context)
+    
+    async def ask_for_category_hebrew(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ask user for Hebrew translation"""
+        user_id = update.effective_user.id
+        category_name = context.user_data.get('category_name', '')
+        
+        message = self.get_message(user_id, 'new_category_hebrew').format(category_name=category_name)
+        
+        # Add skip button
+        keyboard = [[InlineKeyboardButton(
+            self.get_message(user_id, 'btn_skip'),
+            callback_data="skip_hebrew_translation"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def process_category_hebrew(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hebrew_name: str):
+        """Process Hebrew translation input"""
+        user_id = update.effective_user.id
+        
+        # Store Hebrew translation and create category
+        context.user_data['category_hebrew'] = hebrew_name.strip()
+        
+        await self.create_custom_category(update, context)
+    
+    async def create_custom_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Create the custom category in database"""
+        user_id = update.effective_user.id
+        
+        category_name = context.user_data.get('category_name', '')
+        category_key = context.user_data.get('category_key', '')
+        emoji = context.user_data.get('category_emoji', '📦')
+        hebrew_name = context.user_data.get('category_hebrew', category_name)
+        
+        # Create category in database
+        success = self.db.add_custom_category(category_key, emoji, category_name, hebrew_name, user_id)
+        
+        if success:
+            # Clear creation data
+            context.user_data.pop('creating_category', None)
+            context.user_data.pop('category_name', None)
+            context.user_data.pop('category_key', None)
+            context.user_data.pop('category_emoji', None)
+            context.user_data.pop('category_hebrew', None)
+            
+            # Send success message
+            message = self.get_message(user_id, 'category_created_success').format(
+                category_name=category_name,
+                emoji=emoji,
+                name_en=category_name,
+                name_he=hebrew_name
+            )
+            
+            # Add back to menu button
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup)
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(
+                self.get_message(user_id, 'category_already_exists').format(category_name=category_name)
+            )
+    
+    async def show_manage_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show manage categories interface"""
+        user_id = update.effective_user.id
+        
+        # Get custom categories
+        custom_categories = self.db.get_custom_categories()
+        
+        if not custom_categories:
+            message = self.get_message(user_id, 'no_custom_categories')
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )]]
+        else:
+            message = self.get_message(user_id, 'manage_categories_title')
+            keyboard = []
+            
+            for category in custom_categories:
+                keyboard.append([InlineKeyboardButton(
+                    f"{category['emoji']} {category['name_en']} ({category['name_he']})",
+                    callback_data=f"view_category_{category['category_key']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def cancel_category_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel category creation"""
+        user_id = update.effective_user.id
+        
+        # Clear creation data
+        context.user_data.pop('creating_category', None)
+        context.user_data.pop('category_name', None)
+        context.user_data.pop('category_key', None)
+        context.user_data.pop('category_emoji', None)
+        context.user_data.pop('category_hebrew', None)
+        
+        message = self.get_message(user_id, 'category_creation_cancelled')
+        
+        # Add back to menu button
+        keyboard = [[InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_menu'),
+            callback_data="main_menu"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def show_category_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Show category details and management options"""
+        user_id = update.effective_user.id
+        
+        category = self.db.get_custom_category(category_key)
+        if not category:
+            await update.callback_query.answer("Category not found!")
+            return
+        
+        message = f"📂 **{category['name_en']}** ({category['name_he']})\n\n"
+        message += f"Emoji: {category['emoji']}\n"
+        message += f"Created: {category['created_at']}\n"
+        message += f"Key: `{category['category_key']}`"
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_delete_category'),
+                callback_data=f"delete_category_{category_key}"
+            )],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="manage_categories"
+            )]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def confirm_delete_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Confirm category deletion"""
+        user_id = update.effective_user.id
+        
+        category = self.db.get_custom_category(category_key)
+        if not category:
+            await update.callback_query.answer("Category not found!")
+            return
+        
+        message = self.get_message(user_id, 'confirm_delete_category').format(
+            category_name=category['name_en']
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                "✅ Yes, Delete",
+                callback_data=f"confirm_delete_category_{category_key}"
+            )],
+            [InlineKeyboardButton(
+                "❌ Cancel",
+                callback_data=f"view_category_{category_key}"
+            )]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def delete_custom_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Delete custom category"""
+        user_id = update.effective_user.id
+        
+        category = self.db.get_custom_category(category_key)
+        if not category:
+            await update.callback_query.answer("Category not found!")
+            return
+        
+        success = self.db.delete_custom_category(category_key)
+        
+        if success:
+            message = self.get_message(user_id, 'category_deleted_success').format(
+                category_name=category['name_en']
+            )
+            
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="manage_categories"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+        else:
+            await update.callback_query.answer("Failed to delete category!")
+    
+    # Category Suggestion Methods
+    async def suggest_category_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /suggestcategory command - Suggest a new category (all users)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            return
+        
+        await self.start_category_suggestion(update, context)
+    
+    async def manage_category_suggestions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /managecategorysuggestions command - Manage category suggestions (admin only)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        await self.show_manage_category_suggestions(update, context)
+    
+    async def start_category_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start the category suggestion process"""
+        user_id = update.effective_user.id
+        
+        # Clear any previous suggestion data
+        context.user_data.pop('suggesting_category', None)
+        context.user_data.pop('suggest_category_name', None)
+        context.user_data.pop('suggest_category_emoji', None)
+        context.user_data.pop('suggest_category_hebrew', None)
+        
+        # Set flag to indicate we're suggesting a category
+        context.user_data['suggesting_category'] = True
+        
+        message = self.get_message(user_id, 'suggest_category_title')
+        
+        # Add cancel button
+        keyboard = [[InlineKeyboardButton(
+            self.get_message(user_id, 'btn_cancel'),
+            callback_data="cancel_category_suggestion"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup)
+    
+    async def process_suggest_category_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_name: str):
+        """Process category name input for suggestion"""
+        user_id = update.effective_user.id
+        
+        if not category_name.strip():
+            await update.message.reply_text("❌ Please provide a category name.")
+            return
+        
+        # Check if category already exists (in predefined or custom)
+        category_key = category_name.lower().replace(' ', '_').replace('-', '_')
+        
+        # Check predefined categories
+        if category_key in CATEGORIES:
+            await update.message.reply_text(
+                self.get_message(user_id, 'category_suggestion_already_exists').format(category_name=category_name)
+            )
+            return
+        
+        # Check custom categories
+        if self.db.get_custom_category(category_key):
+            await update.message.reply_text(
+                self.get_message(user_id, 'category_suggestion_already_exists').format(category_name=category_name)
+            )
+            return
+        
+        # Check pending suggestions
+        pending_suggestions = self.db.get_pending_category_suggestions()
+        for suggestion in pending_suggestions:
+            if suggestion['category_key'] == category_key:
+                await update.message.reply_text(
+                    self.get_message(user_id, 'category_suggestion_already_exists').format(category_name=category_name)
+                )
+                return
+        
+        # Store category name and ask for emoji
+        context.user_data['suggest_category_name'] = category_name.strip()
+        context.user_data['suggest_category_key'] = category_key
+        
+        await self.ask_for_suggest_category_emoji(update, context)
+    
+    async def ask_for_suggest_category_emoji(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ask user to choose an emoji for the category suggestion"""
+        user_id = update.effective_user.id
+        category_name = context.user_data.get('suggest_category_name', '')
+        
+        message = self.get_message(user_id, 'suggest_category_emoji').format(category_name=category_name)
+        
+        # Add common emoji buttons
+        keyboard = [
+            [InlineKeyboardButton("📱", callback_data="suggest_emoji_📱"),
+             InlineKeyboardButton("💻", callback_data="suggest_emoji_💻"),
+             InlineKeyboardButton("🎮", callback_data="suggest_emoji_🎮"),
+             InlineKeyboardButton("📚", callback_data="suggest_emoji_📚")],
+            [InlineKeyboardButton("🏠", callback_data="suggest_emoji_🏠"),
+             InlineKeyboardButton("🚗", callback_data="suggest_emoji_🚗"),
+             InlineKeyboardButton("✈️", callback_data="suggest_emoji_✈️"),
+             InlineKeyboardButton("🎉", callback_data="suggest_emoji_🎉")],
+            [InlineKeyboardButton("🎨", callback_data="suggest_emoji_🎨"),
+             InlineKeyboardButton("🎵", callback_data="suggest_emoji_🎵"),
+             InlineKeyboardButton("🏃", callback_data="suggest_emoji_🏃"),
+             InlineKeyboardButton("🍽️", callback_data="suggest_emoji_🍽️")],
+            [InlineKeyboardButton("📦", callback_data="suggest_emoji_📦"),
+             InlineKeyboardButton("🔧", callback_data="suggest_emoji_🔧"),
+             InlineKeyboardButton("💡", callback_data="suggest_emoji_💡"),
+             InlineKeyboardButton("⭐", callback_data="suggest_emoji_⭐")],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_cancel'),
+                callback_data="cancel_category_suggestion"
+            )]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def process_suggest_category_emoji(self, update: Update, context: ContextTypes.DEFAULT_TYPE, emoji: str):
+        """Process emoji selection for category suggestion"""
+        user_id = update.effective_user.id
+        
+        # Store emoji and ask for Hebrew translation
+        context.user_data['suggest_category_emoji'] = emoji
+        
+        await self.ask_for_suggest_category_hebrew(update, context)
+    
+    async def ask_for_suggest_category_hebrew(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ask user for Hebrew translation for category suggestion"""
+        user_id = update.effective_user.id
+        category_name = context.user_data.get('suggest_category_name', '')
+        
+        message = self.get_message(user_id, 'suggest_category_hebrew').format(category_name=category_name)
+        
+        # Add skip button
+        keyboard = [[InlineKeyboardButton(
+            self.get_message(user_id, 'btn_skip'),
+            callback_data="skip_suggest_hebrew_translation"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def process_suggest_category_hebrew(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hebrew_name: str):
+        """Process Hebrew translation input for category suggestion"""
+        user_id = update.effective_user.id
+        
+        # Store Hebrew translation and submit suggestion
+        context.user_data['suggest_category_hebrew'] = hebrew_name.strip()
+        
+        await self.submit_category_suggestion(update, context)
+    
+    async def submit_category_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Submit the category suggestion"""
+        user_id = update.effective_user.id
+        
+        category_name = context.user_data.get('suggest_category_name', '')
+        category_key = context.user_data.get('suggest_category_key', '')
+        emoji = context.user_data.get('suggest_category_emoji', '📦')
+        hebrew_name = context.user_data.get('suggest_category_hebrew', category_name)
+        
+        # Submit suggestion to database
+        success = self.db.add_category_suggestion(user_id, category_key, emoji, category_name, hebrew_name)
+        
+        if success:
+            # Clear suggestion data
+            context.user_data.pop('suggesting_category', None)
+            context.user_data.pop('suggest_category_name', None)
+            context.user_data.pop('suggest_category_key', None)
+            context.user_data.pop('suggest_category_emoji', None)
+            context.user_data.pop('suggest_category_hebrew', None)
+            
+            # Send success message
+            message = self.get_message(user_id, 'category_suggestion_submitted').format(
+                category_name=category_name
+            )
+            
+            # Add back to menu button
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+            # Notify admins
+            await self.notify_admins_category_suggestion(user_id, category_name, emoji, hebrew_name)
+        else:
+            await update.message.reply_text(
+                self.get_message(user_id, 'category_suggestion_already_exists').format(category_name=category_name)
+            )
+    
+    async def show_manage_category_suggestions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show manage category suggestions interface"""
+        user_id = update.effective_user.id
+        
+        # Get pending category suggestions
+        suggestions = self.db.get_pending_category_suggestions()
+        
+        if not suggestions:
+            message = self.get_message(user_id, 'no_category_suggestions')
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )]]
+        else:
+            message = self.get_message(user_id, 'manage_category_suggestions_title')
+            keyboard = []
+            
+            for suggestion in suggestions:
+                suggested_by = suggestion['suggested_by_first_name'] or suggestion['suggested_by_username'] or f"User {suggestion['suggested_by']}"
+                keyboard.append([InlineKeyboardButton(
+                    f"{suggestion['emoji']} {suggestion['name_en']} ({suggestion['name_he']}) - by {suggested_by}",
+                    callback_data=f"review_category_suggestion_{suggestion['id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="main_menu"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def cancel_category_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel category suggestion"""
+        user_id = update.effective_user.id
+        
+        # Clear suggestion data
+        context.user_data.pop('suggesting_category', None)
+        context.user_data.pop('suggest_category_name', None)
+        context.user_data.pop('suggest_category_key', None)
+        context.user_data.pop('suggest_category_emoji', None)
+        context.user_data.pop('suggest_category_hebrew', None)
+        
+        message = self.get_message(user_id, 'category_suggestion_cancelled')
+        
+        # Add back to menu button
+        keyboard = [[InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_menu'),
+            callback_data="main_menu"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def notify_admins_category_suggestion(self, suggested_by: int, category_name: str, emoji: str, hebrew_name: str):
+        """Notify admins about new category suggestion"""
+        admins = self.db.get_admin_users()
+        
+        for admin in admins:
+            try:
+                admin_name = admin['first_name'] or admin['username'] or f"Admin {admin['user_id']}"
+                suggested_by_name = self.db.get_user_info(suggested_by)
+                suggested_by_display = suggested_by_name['first_name'] if suggested_by_name else f"User {suggested_by}"
+                
+                notification = f"💡 **New Category Suggestion**\n\n"
+                notification += f"**Category:** {emoji} {category_name} ({hebrew_name})\n"
+                notification += f"**Suggested by:** {suggested_by_display}\n\n"
+                notification += f"Use /managecategorysuggestions to review and approve."
+                
+                await self.application.bot.send_message(
+                    chat_id=admin['user_id'],
+                    text=notification,
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logging.warning(f"Could not notify admin {admin['user_id']} about category suggestion: {e}")
+    
+    async def show_category_suggestion_review(self, update: Update, context: ContextTypes.DEFAULT_TYPE, suggestion_id: int):
+        """Show category suggestion for review"""
+        user_id = update.effective_user.id
+        
+        suggestion = self.db.get_category_suggestion_by_id(suggestion_id)
+        if not suggestion:
+            await update.callback_query.answer("Suggestion not found!")
+            return
+        
+        message = f"💡 **Category Suggestion Review**\n\n"
+        message += f"**Category:** {suggestion['emoji']} {suggestion['name_en']} ({suggestion['name_he']})\n"
+        message += f"**Suggested by:** {suggestion['suggested_by_first_name'] or suggestion['suggested_by_username'] or f'User {suggestion['suggested_by']}'}\n"
+        message += f"**Date:** {suggestion['created_at']}\n\n"
+        message += f"**Key:** `{suggestion['category_key']}`"
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_approve_category'),
+                callback_data=f"approve_category_suggestion_{suggestion_id}"
+            )],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_reject_category'),
+                callback_data=f"reject_category_suggestion_{suggestion_id}"
+            )],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="manage_category_suggestions"
+            )]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def approve_category_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, suggestion_id: int):
+        """Approve a category suggestion"""
+        user_id = update.effective_user.id
+        
+        suggestion = self.db.get_category_suggestion_by_id(suggestion_id)
+        if not suggestion:
+            await update.callback_query.answer("Suggestion not found!")
+            return
+        
+        success = self.db.approve_category_suggestion(suggestion_id, user_id)
+        
+        if success:
+            message = self.get_message(user_id, 'category_suggestion_approved').format(
+                category_name=suggestion['name_en']
+            )
+            
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="manage_category_suggestions"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+            
+            # Notify the user who suggested it
+            await self.notify_user_category_suggestion_result(suggestion['suggested_by'], suggestion['name_en'], 'approved')
+        else:
+            await update.callback_query.answer("Failed to approve suggestion!")
+    
+    async def reject_category_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, suggestion_id: int):
+        """Reject a category suggestion"""
+        user_id = update.effective_user.id
+        
+        suggestion = self.db.get_category_suggestion_by_id(suggestion_id)
+        if not suggestion:
+            await update.callback_query.answer("Suggestion not found!")
+            return
+        
+        success = self.db.reject_category_suggestion(suggestion_id, user_id)
+        
+        if success:
+            message = self.get_message(user_id, 'category_suggestion_rejected').format(
+                category_name=suggestion['name_en']
+            )
+            
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_menu'),
+                callback_data="manage_category_suggestions"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+            
+            # Notify the user who suggested it
+            await self.notify_user_category_suggestion_result(suggestion['suggested_by'], suggestion['name_en'], 'rejected')
+        else:
+            await update.callback_query.answer("Failed to reject suggestion!")
+    
+    async def notify_user_category_suggestion_result(self, user_id: int, category_name: str, result: str):
+        """Notify user about their category suggestion result"""
+        try:
+            if result == 'approved':
+                message = f"✅ **Category Approved!**\n\nYour suggestion \"{category_name}\" has been approved and is now available to all users!"
+            else:
+                message = f"❌ **Category Rejected**\n\nYour suggestion \"{category_name}\" was not approved at this time."
+            
+            await self.application.bot.send_message(
+                chat_id=user_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logging.warning(f"Could not notify user {user_id} about category suggestion result: {e}")
+
     def run(self):
         """Run the bot"""
         logger.info("Starting Shopping Bot...")
