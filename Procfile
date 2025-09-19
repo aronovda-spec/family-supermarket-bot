@@ -1,1 +1,1 @@
-worker: python start_render.py
+web: python start_render.py
