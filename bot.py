@@ -3761,13 +3761,13 @@ class ShoppingBot:
             return
         
         keyboard = [
-            [InlineKeyboardButton("👥 Manage Users", callback_data="manage_users")],
-            [InlineKeyboardButton("📂 Manage Lists", callback_data="manage_lists")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_users'), callback_data="manage_users")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        message = "⚙️ ADMIN CONTROLS\n\nChoose an admin action:"
+        message = self.get_message(user_id, 'admin_controls_title')
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup)
