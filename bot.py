@@ -63,16 +63,34 @@ class ShoppingBot:
         return category_key
 
     def get_category_items(self, user_id: int, category_key: str) -> List[str]:
-        """Get localized category items"""
+        """Get localized category items (excluding deleted items)"""
         lang = self.get_user_language(user_id)
         
         # Check predefined categories first
         category = CATEGORIES.get(category_key, {})
         if category:
-            return category.get('items', {}).get(lang, category.get('items', {}).get('en', []))
+            # Get static items in user's language
+            static_items = category.get('items', {}).get(lang, category.get('items', {}).get('en', []))
+            
+            # Filter out deleted items
+            deleted_items = self.db.get_deleted_items_by_category(category_key)
+            filtered_items = [item for item in static_items if item not in deleted_items]
+            
+            # Add dynamic items, checking for duplicates against BOTH static items and already added dynamic items
+            dynamic_items = self.db.get_dynamic_category_items(category_key)
+            for dynamic_item in dynamic_items:
+                dynamic_item_name = dynamic_item.get(lang, dynamic_item.get('en', ''))
+                if dynamic_item_name:
+                    # Check if item already exists (case-insensitive) in filtered_items
+                    item_exists = any(item.lower() == dynamic_item_name.lower() for item in filtered_items)
+                    if not item_exists:
+                        filtered_items.append(dynamic_item_name)
+            
+            return sorted(filtered_items)
         
-        # Custom categories don't have predefined items, return empty list
-        return []
+        # For custom categories, return dynamic items only
+        dynamic_items = self.db.get_dynamic_category_items(category_key)
+        return sorted([item.get(lang, item.get('en', '')) for item in dynamic_items if item.get(lang, item.get('en', ''))])
 
     def setup_handlers(self):
         """Set up command and callback handlers"""
@@ -269,14 +287,12 @@ class ShoppingBot:
         # Add action buttons
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_new_list'))])
         
-        # Add suggest category button for all authorized users
-        if self.db.is_user_authorized(user_id):
-            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_suggest_category'))])
-        
-        # Add admin and utility buttons
+        # Add management buttons
         if self.db.is_user_admin(user_id):
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_admin_management')), KeyboardButton(self.get_message(user_id, 'btn_user_management'))])
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_admin')), KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         elif self.db.is_user_authorized(user_id):
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_user_management'))])
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_language'))])
@@ -644,10 +660,6 @@ class ShoppingBot:
               text == "💡 Suggest Item" or text == "💡 הצע פריט"):
             await self.suggest_item_command(update, context)
             return
-        elif (text == self.get_message(user_id, 'btn_manage_suggestions') or 
-              text == "💡 Manage Suggestions" or text == "💡 נהל הצעות"):
-            await self.manage_suggestions_command(update, context)
-            return
         elif (text == self.get_message(user_id, 'btn_new_item') or 
               text == "➕ New Item" or text == "➕ פריט חדש"):
             await self.new_item_command(update, context)
@@ -736,6 +748,14 @@ class ShoppingBot:
         elif (text == "⚙️ Admin" or text == "⚙️ מנהל"):
             await self.show_admin_menu(update, context)
             return
+        elif (text == self.get_message(user_id, 'btn_admin_management') or 
+              text == "⚙️ Management" or text == "⚙️ ניהול"):
+            await self.show_admin_management_menu(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_user_management') or 
+              text == "👥 Suggestions" or text == "👥 הצעות"):
+            await self.show_user_management_menu(update, context)
+            return
         
         # Handle dynamic list buttons
         elif text.startswith("🛒 ") or text.startswith("📋 "):
@@ -758,6 +778,16 @@ class ShoppingBot:
         
         if context.user_data.get('waiting_for_edit_list_description'):
             await self.process_edit_list_description(update, context, text)
+            return
+        
+        # Handle item rename
+        if context.user_data.get('renaming_item'):
+            await self.process_item_rename(update, context, text)
+            return
+        
+        # Handle category rename
+        if context.user_data.get('renaming_category'):
+            await self.process_category_rename(update, context, text)
             return
 
     async def process_custom_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
@@ -1160,10 +1190,67 @@ class ShoppingBot:
             await self.delete_custom_category(update, context, category_key)
         
         elif data == "new_category":
+            # Show immediate feedback
+            await query.answer("📂 Starting new category creation...")
+            await self.start_category_creation(update, context)
+        
+        elif data == "new_category_admin":
+            # Show immediate feedback
+            await query.answer("📂 Starting new category creation...")
             await self.start_category_creation(update, context)
         
         elif data == "manage_categories":
-            await self.show_manage_categories(update, context, back_to="admin_panel")
+            # Show immediate feedback
+            await query.answer("🗂️ Loading category management options...")
+            await self.show_manage_categories(update, context, back_to="admin_management")
+        
+        elif data == "new_item_admin":
+            # Show immediate feedback
+            await query.answer("➕ Starting new item creation process...")
+            await self.show_categories_for_new_item(update, context)
+        
+        elif data == "manage_items_admin":
+            # Show immediate feedback
+            await query.answer("📝 Loading item management options...")
+            await self.show_manage_items_admin(update, context)
+        
+        elif data == "rename_items_admin":
+            # Show immediate feedback
+            await query.answer("✏️ Loading item rename options...")
+            await self.show_rename_items_admin(update, context)
+        
+        elif data == "rename_categories_admin":
+            # Show immediate feedback
+            await query.answer("✏️ Loading category rename options...")
+            await self.show_rename_categories_admin(update, context)
+        
+        
+        
+        elif data == "suggest_item_user":
+            # Show immediate feedback
+            await query.answer("💡 Starting item suggestion process...")
+            await self.show_categories_for_suggestion(update, context)
+        
+        elif data == "suggest_category_user":
+            # Show immediate feedback
+            await query.answer("📂 Starting category suggestion process...")
+            await self.suggest_category_command(update, context)
+        
+        elif data == "admin_management":
+            await self.show_admin_management_menu(update, context)
+        
+        elif data == "user_management":
+            await self.show_user_management_menu(update, context)
+        
+        elif data == "manage_category_suggestions":
+            # Show immediate feedback
+            await query.answer("💭 Loading category suggestions for review...")
+            await self.show_manage_category_suggestions(update, context)
+        
+        elif data == "manage_suggestions":
+            # Show immediate feedback
+            await query.answer("💡 Loading item suggestions for review...")
+            await self.manage_suggestions_command(update, context)
         
         # Category suggestion callbacks
         elif data == "cancel_category_suggestion":
@@ -1271,6 +1358,8 @@ class ShoppingBot:
                 if suggestion:
                     # Notify the user who suggested the item
                     await self.notify_suggestion_result(update, context, suggestion, 'approved')
+                    # Notify all authorized users and admins about the approval
+                    await self.notify_all_users_item_approved(suggestion, user_id)
                 
                 await query.edit_message_text("✅ Suggestion approved!")
                 await self.show_main_menu(update, context)
@@ -1487,6 +1576,8 @@ class ShoppingBot:
         
         elif data.startswith("manage_suggestions_"):
             list_id = int(data.replace("manage_suggestions_", ""))
+            # Show immediate feedback
+            await query.answer("💡 Loading suggestions for review...")
             await self.show_manage_suggestions_for_list(update, context, list_id)
         
         elif data.startswith("manage_item_suggestions_"):
@@ -1513,15 +1604,63 @@ class ShoppingBot:
             list_id = int(data.replace("confirm_delete_list_", ""))
             await self.confirm_delete_list(update, context, list_id)
         
+        
+        elif data == "delete_permanent_items":
+            await self.show_delete_permanent_items_menu(update, context)
+        
+        elif data.startswith("delete_permanent_items_"):
+            category_key = data.replace("delete_permanent_items_", "")
+            await self.show_permanent_items_in_category(update, context, category_key)
+        
+        elif data.startswith("confirm_delete_permanent_item_"):
+            # Format: confirm_delete_permanent_item_{category_key}_{item_name}
+            parts = data.replace("confirm_delete_permanent_item_", "").split("_", 1)
+            if len(parts) == 2:
+                category_key = parts[0]
+                item_name = parts[1]
+                await self.confirm_delete_permanent_item(update, context, category_key, item_name)
+        
+        elif data.startswith("rename_items_category_"):
+            category_key = data.replace("rename_items_category_", "")
+            await self.show_items_to_rename(update, context, category_key)
+        
+        elif data.startswith("rename_item_"):
+            # Format: rename_item_{category_key}_{item_name}
+            parts = data.replace("rename_item_", "").split("_", 1)
+            if len(parts) == 2:
+                category_key = parts[0]
+                item_name = parts[1]
+                await self.start_item_rename(update, context, category_key, item_name)
+        
+        elif data.startswith("rename_category_"):
+            category_key = data.replace("rename_category_", "")
+            await self.start_category_rename(update, context, category_key)
+        
+        elif data == "cancel_rename":
+            await self.cancel_rename(update, context)
+        
+        elif data.startswith("delete_permanent_item_"):
+            # Format: delete_permanent_item_{category_key}_{item_name}
+            parts = data.replace("delete_permanent_item_", "").split("_", 1)
+            if len(parts) == 2:
+                category_key = parts[0]
+                item_name = parts[1]
+                await self.delete_permanent_item(update, context, category_key, item_name)
+        
         elif data.startswith("remove_items_"):
             list_id = int(data.replace("remove_items_", ""))
             await self.show_remove_items_menu(update, context, list_id)
         
         elif data.startswith("remove_category_"):
-            parts = data.split('_')
-            list_id = int(parts[2])
-            category = '_'.join(parts[3:])  # In case category has underscores
-            await self.confirm_remove_category(update, context, list_id, category)
+            # Check if it's a permanent category removal (no list_id)
+            if len(data.split('_')) == 3:  # remove_category_{category_key}
+                category_key = data.replace("remove_category_", "")
+                await self.confirm_remove_permanent_category(update, context, category_key)
+            else:  # remove_category_{list_id}_{category} - existing functionality
+                parts = data.split('_')
+                list_id = int(parts[2])
+                category = '_'.join(parts[3:])  # In case category has underscores
+                await self.confirm_remove_category(update, context, list_id, category)
         
         elif data.startswith("remove_individual_"):
             list_id = int(data.replace("remove_individual_", ""))
@@ -1533,41 +1672,18 @@ class ShoppingBot:
             category = '_'.join(parts[4:])  # In case category has underscores
             await self.remove_category_items(update, context, list_id, category)
         
+        elif data.startswith("confirm_remove_permanent_category_"):
+            category_key = data.replace("confirm_remove_permanent_category_", "")
+            await self.remove_permanent_category(update, context, category_key)
+        
         elif data.startswith("remove_item_"):
             parts = data.split('_')
             list_id = int(parts[2])
             item_id = int(parts[3])
             await self.remove_individual_item(update, context, list_id, item_id)
         
-        elif data.startswith("delete_permanent_items_"):
-            list_id = int(data.replace("delete_permanent_items_", ""))
-            await self.show_delete_permanent_items(update, context, list_id)
         
-        elif data.startswith("delete_permanent_category_"):
-            parts = data.split('_')
-            list_id = int(parts[3])
-            category = '_'.join(parts[4:])  # In case category has underscores
-            await self.confirm_delete_permanent_category(update, context, list_id, category)
         
-        elif data.startswith("delete_permanent_individual_"):
-            list_id = int(data.replace("delete_permanent_individual_", ""))
-            await self.show_delete_permanent_individual(update, context, list_id)
-        
-        elif data.startswith("confirm_delete_permanent_category_"):
-            parts = data.split('_')
-            list_id = int(parts[4])
-            category = '_'.join(parts[5:])  # In case category has underscores
-            await self.delete_permanent_category_items(update, context, list_id, category)
-        
-        elif data.startswith("delete_permanent_item_"):
-            parts = data.split('_', 4)  # Split into max 5 parts: ['delete', 'permanent', 'item', 'list_id', 'category_itemname']
-            list_id = int(parts[3])
-            category_item = parts[4]  # This contains "category_itemname"
-            # Split category and item name (category is first part, rest is item name)
-            category_parts = category_item.split('_', 1)
-            category = category_parts[0]
-            item_name = category_parts[1] if len(category_parts) > 1 else ""
-            await self.delete_permanent_individual_item(update, context, list_id, category, item_name)
         
         elif data.startswith("confirm_reset_list_"):
             list_id = int(data.replace("confirm_reset_list_", ""))
@@ -1641,6 +1757,10 @@ class ShoppingBot:
                 # Successful deletion
                 message = self.get_message(update.effective_user.id, 'list_deleted').format(list_name=result)
                 await query.edit_message_text(message)
+                
+                # Notify all authorized users about list deletion
+                await self.notify_list_deletion(result, list_id)
+                
                 await self.show_main_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error deleting list.")
@@ -1652,6 +1772,10 @@ class ShoppingBot:
                 list_name = list_info['name'] if list_info else f"List {list_id}"
                 message = self.get_message(update.effective_user.id, 'list_reset_items').format(list_name=list_name)
                 await query.edit_message_text(message)
+                
+                # Notify all authorized users about list reset
+                await self.notify_list_reset(list_name, list_id)
+                
                 await self.show_main_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error resetting list.")
@@ -1767,7 +1891,7 @@ class ShoppingBot:
             return
 
         # Build user list message
-        message_parts = ["👥 **User Management**\n"]
+        message_parts = ["👥 **Suggestions**\n"]
         
         admins = [u for u in users if u['is_admin']]
         authorized = [u for u in users if u['is_authorized'] and not u['is_admin']]
@@ -2316,7 +2440,9 @@ class ShoppingBot:
         target_list_id = context.user_data.get('target_list_id', 1)
         
         # Save suggestion to database
-        if self.db.add_item_suggestion(user_id, category_key, item_name_en, hebrew_translation.strip(), target_list_id):
+        success = self.db.add_item_suggestion(user_id, category_key, item_name_en, hebrew_translation.strip(), target_list_id)
+        
+        if success:
             category_name = self.get_category_name(user_id, category_key)
             success_message = self.get_message(user_id, 'suggestion_submitted').format(
                 item_name_en=item_name_en,
@@ -2328,7 +2454,13 @@ class ShoppingBot:
             # Notify admins about new suggestion
             await self.notify_admins_new_suggestion(update, context, item_name_en, hebrew_translation.strip(), category_name)
         else:
-            await update.message.reply_text(self.get_message(user_id, 'suggestion_error'))
+            # Check if it's a duplicate
+            if self.db.is_item_in_category(category_key, item_name_en):
+                category_name = self.get_category_name(user_id, category_key)
+                duplicate_message = f"❌ **Item Already Exists**\n\nThe item **{item_name_en}** already exists in the **{category_name}** category.\n\nPlease suggest a different item."
+                await update.message.reply_text(duplicate_message, parse_mode='Markdown')
+            else:
+                await update.message.reply_text("❌ **Suggestion Failed**\n\nThis item may have already been suggested or there was an error. Please try again.")
         
         # Clear waiting states
         context.user_data.pop('waiting_for_suggestion_translation', None)
@@ -2355,17 +2487,31 @@ class ShoppingBot:
         """Handle /managesuggestions command - show pending suggestions for admin review"""
         user_id = update.effective_user.id
         if not self.db.is_user_authorized(user_id):
-            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            if update.message:
+                await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'admin_only'))
             return
 
         suggestions = self.db.get_pending_suggestions()
         
         if not suggestions:
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'suggestions_empty'))
+            # Show "no suggestions found" message with back button
+            keyboard = [[InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message = "💡 **Manage Items Suggested**\n\n✅ No pending item suggestions found.\n\nAll suggestions have been reviewed."
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             return
         
         # Show first suggestion for review
@@ -2609,7 +2755,8 @@ class ShoppingBot:
             return
         
         # Add item directly to the category (admin privilege)
-        if self.add_item_to_category(category_key, item_name_en, hebrew_translation.strip()):
+        result = self.add_item_to_category(category_key, item_name_en, hebrew_translation.strip())
+        if result:
             category_name = self.get_category_name(user_id, category_key)
             success_message = f"✅ New Item Added!\n\n📝 Item: {item_name_en}\n🌐 Hebrew: {hebrew_translation.strip()}\n📂 Category: {category_name}\n\nThis item is now available for everyone!"
             await update.message.reply_text(success_message)
@@ -2617,7 +2764,11 @@ class ShoppingBot:
             # Notify all users about the new item
             await self.notify_users_new_item(update, context, item_name_en, hebrew_translation.strip(), category_name)
         else:
-            await update.message.reply_text("❌ Error adding new item. Please try again.")
+            # Check if it's a duplicate
+            if self.db.is_item_in_category(category_key, item_name_en):
+                await update.message.reply_text(f"❌ Error adding new item - Duplicate!\n\nThe item **{item_name_en}** already exists in the **{self.get_category_name(user_id, category_key)}** category.")
+            else:
+                await update.message.reply_text("❌ Error adding new item. Please try again.")
         
         # Clear waiting states
         context.user_data.pop('waiting_for_new_item_translation', None)
@@ -2627,13 +2778,12 @@ class ShoppingBot:
     def add_item_to_category(self, category_key: str, item_name_en: str, item_name_he: str) -> bool:
         """Add item directly to category (admin only)"""
         try:
-            # Update the CATEGORIES dictionary in config.py
-            # This is a simplified approach - in production you'd want to persist this
-            if category_key in CATEGORIES:
-                CATEGORIES[category_key]['items']['en'].append(item_name_en)
-                CATEGORIES[category_key]['items']['he'].append(item_name_he)
-                return True
-            return False
+            # Check if item already exists (static or dynamic)
+            if self.db.is_item_in_category(category_key, item_name_en):
+                return False  # Item already exists
+            
+            # Add to dynamic category items table
+            return self.db.add_dynamic_category_item(category_key, item_name_en, item_name_he)
         except Exception as e:
             logging.error(f"Error adding item to category: {e}")
             return False
@@ -3149,11 +3299,22 @@ class ShoppingBot:
         context.user_data['target_list_id'] = list_id
         
         keyboard = []
+        
+        # Add predefined categories
         for category_key, category_data in CATEGORIES.items():
             category_name = self.get_category_name(user_id, category_key)
             keyboard.append([InlineKeyboardButton(
                 f"{category_data['emoji']} {category_name}",
                 callback_data=f"category_{category_key}"
+            )])
+        
+        # Add custom categories from database
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            keyboard.append([InlineKeyboardButton(
+                f"{category['emoji']} {category_name}",
+                callback_data=f"category_{category['category_key']}"
             )])
         
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="my_lists")])
@@ -3344,26 +3505,9 @@ class ShoppingBot:
         items = self.db.get_shopping_list_by_id(list_id)
         
         if not items:
-            message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove from the list.\n\n"
-            message += self.get_message(user_id, 'however_delete_permanent')
+            message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove from the list."
             
-            keyboard = []
-            
-            # Add permanent item deletion option for admins (always show)
-            keyboard.append([InlineKeyboardButton(
-                "🗑️ Delete Permanent Items", 
-                callback_data=f"delete_permanent_items_{list_id}"
-            )])
-            
-            # Add category management option for admins
-            keyboard.append([InlineKeyboardButton(
-                "📂 Manage Categories", 
-                callback_data="manage_categories"
-            )])
-            
-            # Add back button
-            keyboard.append([InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")])
-            
+            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             return
@@ -3393,18 +3537,6 @@ class ShoppingBot:
         keyboard.append([InlineKeyboardButton(
             "🔍 Remove Individual Items", 
             callback_data=f"remove_individual_{list_id}"
-        )])
-        
-        # Add permanent item deletion option for admins (always show)
-        keyboard.append([InlineKeyboardButton(
-            "🗑️ Delete Permanent Items", 
-            callback_data=f"delete_permanent_items_{list_id}"
-        )])
-        
-        # Add category management option for admins
-        keyboard.append([InlineKeyboardButton(
-            "📂 Manage Categories", 
-            callback_data="manage_categories"
         )])
         
         # Add back button
@@ -3584,246 +3716,9 @@ class ShoppingBot:
         else:
             await update.callback_query.edit_message_text("Failed to remove item. Please try again.")
     
-    async def show_delete_permanent_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show permanent items for deletion from categories"""
-        user_id = update.effective_user.id
-        list_info = self.db.get_list_by_id(list_id)
-        
-        if not list_info:
-            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
-            return
-        
-        # Get all permanent items from categories
-        permanent_items = []
-        user_lang = self.db.get_user_language(user_id) or 'en'
-        
-        for category_key, category_data in CATEGORIES.items():
-            if isinstance(category_data, dict) and 'items' in category_data:
-                # Get items for the user's language
-                items = category_data['items'].get(user_lang, [])
-                for item in items:
-                    permanent_items.append({
-                        'name': item,
-                        'category': category_key,
-                        'category_name': self.get_category_name(user_id, category_key)
-                    })
-        
-        if not permanent_items:
-            message = f"📋 **{list_info['name']}**\n\n📝 No permanent items found in categories."
-            keyboard = [[InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{list_id}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-            return
-        
-        message = f"🗑️ **Delete Individual Permanent Items**\n\n"
-        message += "⚠️ **WARNING**: This will permanently delete items from categories!\n"
-        message += "These items will no longer be available for selection.\n\n"
-        message += "Select individual items to delete permanently:\n\n"
-        
-        keyboard = []
-        
-        # Show individual items for selection (2 per row)
-        for i in range(0, len(permanent_items), 2):
-            row = []
-            for j in range(2):
-                if i + j < len(permanent_items):
-                    item = permanent_items[i + j]
-                    category_name = self.get_category_name(user_id, item['category'])
-                    item_display = item['name'][:15] + "..." if len(item['name']) > 15 else item['name']
-                    row.append(InlineKeyboardButton(
-                        f"🗑️ {item_display}",
-                        callback_data=f"delete_permanent_item_{list_id}_{item['category']}_{item['name']}"
-                    ))
-            keyboard.append(row)
-        
-        # Add back button
-        keyboard.append([InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{list_id}")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
-    async def confirm_delete_permanent_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int, category: str):
-        """Confirm deletion of all permanent items from a category"""
-        user_id = update.effective_user.id
-        list_info = self.db.get_list_by_id(list_id)
-        
-        if not list_info:
-            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
-            return
-        
-        # Get permanent items in this category
-        category_data = CATEGORIES.get(category, {})
-        if not isinstance(category_data, dict) or 'items' not in category_data:
-            await update.callback_query.edit_message_text("No permanent items found in this category.")
-            return
-        
-        user_lang = self.db.get_user_language(user_id) or 'en'
-        permanent_items = category_data['items'].get(user_lang, [])
-        category_name = self.get_category_name(user_id, category)
-        
-        message = f"🗑️ **Confirm Permanent Category Deletion**\n\n"
-        message += f"**Category:** {category_name}\n"
-        message += f"**Items to delete permanently:** {len(permanent_items)}\n\n"
-        message += "**Items:**\n"
-        for item in permanent_items[:10]:  # Show first 10 items
-            message += f"• {item}\n"
-        if len(permanent_items) > 10:
-            message += f"... and {len(permanent_items) - 10} more items\n"
-        
-        message += f"\n⚠️ **WARNING**: This will permanently delete ALL items from the {category_name} category!"
-        message += f"\nThese items will no longer be available for selection in any list."
-        
-        keyboard = [
-            [InlineKeyboardButton("✅ Yes, Delete All Permanently", callback_data=f"confirm_delete_permanent_category_{list_id}_{category}")],
-            [InlineKeyboardButton("❌ Cancel", callback_data=f"delete_permanent_items_{list_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
-    async def show_delete_permanent_individual(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show individual permanent items for deletion"""
-        user_id = update.effective_user.id
-        list_info = self.db.get_list_by_id(list_id)
-        
-        if not list_info:
-            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
-            return
-        
-        # Get all permanent items from categories
-        permanent_items = []
-        user_lang = self.db.get_user_language(user_id) or 'en'
-        
-        for category_key, category_data in CATEGORIES.items():
-            if isinstance(category_data, dict) and 'items' in category_data:
-                # Get items for the user's language
-                items = category_data['items'].get(user_lang, [])
-                for item in items:
-                    permanent_items.append({
-                        'name': item,
-                        'category': category_key,
-                        'category_name': self.get_category_name(user_id, category_key)
-                    })
-        
-        if not permanent_items:
-            message = f"📋 **{list_info['name']}**\n\n📝 No permanent items found in categories."
-            keyboard = [[InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{list_id}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-            return
-        
-        message = f"🔍 **Delete Individual Permanent Items from {list_info['name']}**\n\n"
-        message += "⚠️ **WARNING**: This will permanently delete items from categories!\n\n"
-        message += self.get_message(user_id, 'select_items_delete_permanently')
-        
-        keyboard = []
-        
-        # Add items in groups of 2 for better layout
-        for i in range(0, len(permanent_items), 2):
-            row = []
-            for j in range(2):
-                if i + j < len(permanent_items):
-                    item = permanent_items[i + j]
-                    item_name = item['name'][:15] + "..." if len(item['name']) > 15 else item['name']
-                    row.append(InlineKeyboardButton(
-                        f"🗑️ {item_name}", 
-                        callback_data=f"delete_permanent_item_{list_id}_{item['category']}_{item['name']}"
-                    ))
-            keyboard.append(row)
-        
-        # Add back button
-        keyboard.append([InlineKeyboardButton("🏠 Back to Delete Menu", callback_data=f"delete_permanent_items_{list_id}")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
-    async def delete_permanent_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int, category: str):
-        """Delete all permanent items from a category"""
-        user_id = update.effective_user.id
-        list_info = self.db.get_list_by_id(list_id)
-        
-        if not list_info:
-            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
-            return
-        
-        # Get permanent items in this category
-        category_data = CATEGORIES.get(category, {})
-        if not isinstance(category_data, dict) or 'items' not in category_data:
-            await update.callback_query.edit_message_text("No permanent items found in this category.")
-            return
-        
-        user_lang = self.db.get_user_language(user_id) or 'en'
-        permanent_items = category_data['items'].get(user_lang, []).copy()  # Make a copy
-        category_name = self.get_category_name(user_id, category)
-        
-        # Clear the items from the category
-        CATEGORIES[category]['items'][user_lang] = []
-        
-        # Notify all users about the deletion
-        authorized_users = self.db.get_all_authorized_users()
-        for auth_user in authorized_users:
-            try:
-                user_lang = self.db.get_user_language(auth_user['user_id'])
-                if user_lang == 'he':
-                    notification = f"🗑️ מנהל מחק לצמיתות {len(permanent_items)} פריטים מהקטגוריה '{category_name}'"
-                else:
-                    notification = f"🗑️ Admin permanently deleted {len(permanent_items)} items from '{category_name}' category"
-                
-                await self.application.bot.send_message(chat_id=auth_user['user_id'], text=notification)
-            except Exception as e:
-                logging.error(f"Error sending deletion notification to user {auth_user['user_id']}: {e}")
-        
-        success_message = f"✅ Successfully deleted {len(permanent_items)} items permanently from {category_name} category."
-        keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
-    
-    async def delete_permanent_individual_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int, category: str, item_name: str):
-        """Delete an individual permanent item from a category"""
-        user_id = update.effective_user.id
-        list_info = self.db.get_list_by_id(list_id)
-        
-        if not list_info:
-            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
-            return
-        
-        # Get permanent items in this category
-        category_data = CATEGORIES.get(category, {})
-        if not isinstance(category_data, dict) or 'items' not in category_data:
-            await update.callback_query.edit_message_text("Category not found.")
-            return
-        
-        user_lang = self.db.get_user_language(user_id) or 'en'
-        items = category_data['items'].get(user_lang, [])
-        
-        if item_name not in items:
-            await update.callback_query.edit_message_text("Item not found in category.")
-            return
-        
-        # Remove the item from the category
-        items.remove(item_name)
-        category_name = self.get_category_name(user_id, category)
-        
-        # Notify all users about the deletion
-        authorized_users = self.db.get_all_authorized_users()
-        for auth_user in authorized_users:
-            try:
-                user_lang = self.db.get_user_language(auth_user['user_id'])
-                if user_lang == 'he':
-                    notification = f"🗑️ מנהל מחק לצמיתות את הפריט '{item_name}' מהקטגוריה '{category_name}'"
-                else:
-                    notification = f"🗑️ Admin permanently deleted item '{item_name}' from '{category_name}' category"
-                
-                await self.application.bot.send_message(chat_id=auth_user['user_id'], text=notification)
-            except Exception as e:
-                logging.error(f"Error sending deletion notification to user {auth_user['user_id']}: {e}")
-        
-        success_message = f"✅ Successfully deleted '{item_name}' permanently from {category_name} category."
-        keyboard = [[InlineKeyboardButton("🏠 Back to Delete Menu", callback_data=f"delete_permanent_items_{list_id}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
     
     async def confirm_delete_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show delete list confirmation (with supermarket list protection)"""
@@ -4010,13 +3905,11 @@ class ShoppingBot:
         # Add "My Items" for all lists
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data=f"my_items_{list_id}")])
         
-        # Add admin-only options
+        # Add admin-only options (only list-specific functions)
         if self.db.is_user_admin(user_id):
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_export'), callback_data=f"export_list_{list_id}")])
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_manage_suggestions'), callback_data=f"manage_suggestions_{list_id}")])
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_edit_name'), callback_data=f"edit_list_name_{list_id}")])
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_remove_items'), callback_data=f"remove_items_{list_id}")])
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")])
+            keyboard.append([InlineKeyboardButton("🗑️ Remove Items", callback_data=f"remove_items_{list_id}")])
             
             # Add maintenance mode only for supermarket list
             if target_list['list_type'] == 'supermarket':
@@ -4118,9 +4011,6 @@ class ShoppingBot:
         keyboard = [
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_users'), callback_data="manage_users")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_new_category'), callback_data="new_category")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_categories'), callback_data="manage_categories")],
-            [InlineKeyboardButton("💡 Manage Category Suggestions", callback_data="manage_category_suggestions")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -4144,6 +4034,494 @@ class ShoppingBot:
             return
         
         await self.show_maintenance_mode(update, context)
+
+    async def show_admin_management_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show admin management menu with all management functions"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("➕ New Item", callback_data="new_item_admin")],
+            [InlineKeyboardButton("📝 Manage Items", callback_data="manage_items_admin")],
+            [InlineKeyboardButton("💡 Manage Items Suggested", callback_data="manage_suggestions")],
+            [InlineKeyboardButton("📂 New Category", callback_data="new_category_admin")],
+            [InlineKeyboardButton("🗂️ Manage Categories", callback_data="manage_categories")],
+            [InlineKeyboardButton("💭 Manage Categories Suggested", callback_data="manage_category_suggestions")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "⚙️ **Management**\n\nChoose what you want to manage:"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_user_management_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show user management menu with suggestion functions"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_authorized(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'not_registered'))
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("💡 Suggest New Item", callback_data="suggest_item_user")],
+            [InlineKeyboardButton("📂 Suggest New Category", callback_data="suggest_category_user")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "👥 **Suggestions**\n\nChoose what you want to suggest:"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_categories_for_new_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show categories for admin to add new items"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        keyboard = []
+        
+        # Add predefined categories
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            keyboard.append([InlineKeyboardButton(
+                f"{category_data['emoji']} {category_name}",
+                callback_data=f"new_item_category_{category_key}"
+            )])
+        
+        # Add custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            keyboard.append([InlineKeyboardButton(
+                f"{category['emoji']} {category_name}",
+                callback_data=f"new_item_category_{category['category_key']}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "➕ **Add New Item (Admin)**\n\nSelect a category to add a new item:"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_manage_items_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show admin item management options"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("✏️ Rename Items", callback_data="rename_items_admin")],
+            [InlineKeyboardButton("🗑️ Delete Permanent Items", callback_data="delete_permanent_items")],
+            [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "📝 **Manage Items (Admin)**\n\nChoose what you want to manage:"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_categories_for_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show categories for user to suggest new items"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            return
+        
+        keyboard = []
+        
+        # Add predefined categories
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            keyboard.append([InlineKeyboardButton(
+                f"{category_data['emoji']} {category_name}",
+                callback_data=f"suggest_category_{category_key}"
+            )])
+        
+        # Add custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            keyboard.append([InlineKeyboardButton(
+                f"{category['emoji']} {category_name}",
+                callback_data=f"suggest_category_{category['category_key']}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back to Suggestions", callback_data="user_management")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "💡 **Suggest New Item**\n\nSelect a category to suggest a new item:"
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+
+
+    async def show_delete_permanent_items_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show menu to select which category to delete permanent items from"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        keyboard = []
+        
+        # Add predefined categories
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            keyboard.append([InlineKeyboardButton(
+                f"{category_data['emoji']} {category_name}",
+                callback_data=f"delete_permanent_items_{category_key}"
+            )])
+        
+        # Add custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            keyboard.append([InlineKeyboardButton(
+                f"{category['emoji']} {category_name}",
+                callback_data=f"delete_permanent_items_{category['category_key']}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "🗑️ **Delete Permanent Items**\n\nSelect a category to permanently delete items from:"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_permanent_items_in_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Show predefined items in a category for deletion"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get predefined items from the category
+        if category_key not in CATEGORIES:
+            message = "❌ Category not found."
+            if update.message:
+                await update.message.reply_text(message)
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message)
+            return
+        
+        category_data = CATEGORIES[category_key]
+        category_name = self.get_category_name(user_id, category_key)
+        
+        # Get items in user's language (show all items, including deleted ones for admin deletion)
+        items = category_data['items'][self.get_user_language(user_id)]
+        
+        # Filter out already deleted items to avoid duplicates
+        deleted_items = self.db.get_deleted_items_by_category(category_key)
+        available_items = [item for item in items if item not in deleted_items]
+        
+        if not available_items:
+            message = f"📂 **{category_name}**\n\nAll items in this category have already been deleted."
+            
+            keyboard = [[InlineKeyboardButton("🔙 Back to Delete Permanent Items", callback_data="delete_permanent_items")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            return
+        
+        keyboard = []
+        
+        for item in available_items:
+            keyboard.append([InlineKeyboardButton(
+                f"🗑️ {item}",
+                callback_data=f"confirm_delete_permanent_item_{category_key}_{item}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back to Delete Permanent Items", callback_data="delete_permanent_items")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = f"🗑️ **Delete Items from {category_name}**\n\nSelect an item to permanently remove from this category:"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def confirm_delete_permanent_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, item_name: str):
+        """Confirm deletion of a predefined item from category"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        category_name = self.get_category_name(user_id, category_key)
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ Yes, Delete Permanently", callback_data=f"delete_permanent_item_{category_key}_{item_name}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"delete_permanent_items_{category_key}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = f"⚠️ **Confirm Permanent Deletion**\n\nAre you sure you want to permanently remove:\n\n**{item_name}**\n\nfrom the **{category_name}** category?\n\nThis item will no longer appear in the 'Add Item' options!"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def delete_permanent_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, item_name: str):
+        """Delete a predefined item from category"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Check if category exists
+        if category_key not in CATEGORIES:
+            message = "❌ Category not found."
+            if update.message:
+                await update.message.reply_text(message)
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message)
+            return
+        
+        category_name = self.get_category_name(user_id, category_key)
+        
+        # Add the item to deleted items list (we'll store this in the database)
+        success = self.db.add_deleted_item(category_key, item_name, user_id)
+        
+        if success:
+            message = f"✅ **Item Deleted Successfully**\n\n**{item_name}** has been permanently removed from the **{category_name}** category.\n\nThis item will no longer appear in the 'Add Item' options!"
+            
+            # Notify all authorized users
+            await self.notify_item_deletion(item_name, category_name)
+        else:
+            message = "❌ Failed to delete item. Please try again."
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back to Delete Permanent Items", callback_data="delete_permanent_items")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def notify_item_deletion(self, item_name: str, category: str):
+        """Notify all authorized users about item deletion"""
+        try:
+            # Get all authorized users
+            users = self.db.get_all_authorized_users()
+            
+            for user in users:
+                try:
+                    message = f"🗑️ **Item Deleted**\n\n**{item_name}** has been permanently deleted from the **{category}** category."
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about item deletion: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about item deletion: {e}")
+
+    async def notify_list_reset(self, list_name: str, list_id: int):
+        """Notify all authorized users about list reset"""
+        try:
+            # Get all authorized users
+            users = self.db.get_all_authorized_users()
+            
+            for user in users:
+                try:
+                    user_lang = self.db.get_user_language(user['user_id'])
+                    if user_lang == 'he':
+                        message = f"🔄 **רשימה אופסה**\n\nהרשימה **{list_name}** אופסה על ידי מנהל.\nכל הפריטים הוסרו מהרשימה."
+                    else:
+                        message = f"🔄 **List Reset**\n\nThe **{list_name}** list has been reset by an admin.\nAll items have been removed from the list."
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about list reset: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about list reset: {e}")
+
+    async def notify_list_deletion(self, list_name: str, list_id: int):
+        """Notify all authorized users about list deletion"""
+        try:
+            # Get all authorized users
+            users = self.db.get_all_authorized_users()
+            
+            for user in users:
+                try:
+                    user_lang = self.db.get_user_language(user['user_id'])
+                    if user_lang == 'he':
+                        message = f"🗑️ **רשימה נמחקה**\n\nהרשימה **{list_name}** נמחקה על ידי מנהל.\nהרשימה לא קיימת יותר."
+                    else:
+                        message = f"🗑️ **List Deleted**\n\nThe **{list_name}** list has been deleted by an admin.\nThe list no longer exists."
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about list deletion: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about list deletion: {e}")
+
+
+    async def confirm_remove_permanent_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Confirm removal of a permanent category"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get category info
+        category_info = self.db.get_custom_category(category_key)
+        if not category_info:
+            await update.callback_query.edit_message_text("❌ Category not found.")
+            return
+        
+        category_name = self.get_category_name(user_id, category_key)
+        
+        # Check if category has items in any lists
+        items_count = self.db.count_items_in_category(category_key)
+        
+        message = f"🗑️ **Remove Category Permanently**\n\n"
+        message += f"📂 Category: {category_info['emoji']} {category_name}\n"
+        message += f"📊 Items in lists: {items_count}\n\n"
+        
+        if items_count > 0:
+            message += f"⚠️ **WARNING:** This category has {items_count} items in shopping lists.\n"
+            message += f"Removing this category will also remove all these items from all lists.\n\n"
+        
+        message += "Are you sure you want to permanently remove this category?"
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ Yes, Remove Permanently", callback_data=f"confirm_remove_permanent_category_{category_key}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="remove_categories_admin")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def remove_permanent_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Remove a category permanently"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get category info before deletion
+        category_info = self.db.get_custom_category(category_key)
+        if not category_info:
+            await update.callback_query.edit_message_text("❌ Category not found.")
+            return
+        
+        category_name = self.get_category_name(user_id, category_key)
+        
+        # Remove the category
+        success = self.db.delete_custom_category(category_key)
+        
+        if success:
+            message = f"✅ **Category Removed Successfully**\n\n"
+            message += f"📂 Category: {category_info['emoji']} {category_name}\n"
+            message += f"🗑️ All items from this category have been removed from all lists.\n\n"
+            message += f"The category has been permanently deleted."
+            
+            # Notify all users about the category removal
+            await self.notify_category_removal(category_name, category_info['emoji'])
+        else:
+            message = "❌ Error removing category. Please try again."
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Admin Management", callback_data="admin_management")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def notify_category_removal(self, category_name: str, emoji: str):
+        """Notify all users about category removal"""
+        try:
+            # Get all authorized users
+            users = self.db.get_all_authorized_users()
+            
+            message = f"📢 **Category Removed**\n\n"
+            message += f"🗑️ Category: {emoji} {category_name}\n"
+            message += f"👤 Removed by: Admin\n\n"
+            message += f"All items from this category have been removed from all shopping lists."
+            
+            for user in users:
+                try:
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']}: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about category removal: {e}")
     
     async def show_maintenance_mode(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show maintenance mode options"""
@@ -4329,7 +4707,7 @@ class ShoppingBot:
         """Handle /newcategory command - Create a new custom category (admin only)"""
         user_id = update.effective_user.id
         
-        if not self.db.is_admin(user_id):
+        if not self.db.is_user_admin(user_id):
             await update.message.reply_text("❌ Only admins can create new categories.")
             return
         
@@ -4339,7 +4717,7 @@ class ShoppingBot:
         """Handle /managecategories command - Manage custom categories (admin only)"""
         user_id = update.effective_user.id
         
-        if not self.db.is_admin(user_id):
+        if not self.db.is_user_admin(user_id):
             await update.message.reply_text("❌ Only admins can manage categories.")
             return
         
@@ -4367,7 +4745,10 @@ class ShoppingBot:
         )]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(message, reply_markup=reply_markup)
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
     
     async def process_category_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_name: str):
         """Process category name input"""
@@ -4538,7 +4919,9 @@ class ShoppingBot:
             )]]
         else:
             message = self.get_message(user_id, 'manage_categories_title')
-            keyboard = []
+            keyboard = [
+                [InlineKeyboardButton("✏️ Rename Categories", callback_data="rename_categories_admin")]
+            ]
             
             for category in custom_categories:
                 keyboard.append([InlineKeyboardButton(
@@ -5005,6 +5388,8 @@ class ShoppingBot:
             
             # Notify the user who suggested it
             await self.notify_user_category_suggestion_result(suggestion['suggested_by'], suggestion['name_en'], 'approved')
+            # Notify all authorized users and admins about the approval
+            await self.notify_all_users_category_approved(suggestion, user_id)
         else:
             await update.callback_query.answer("Failed to approve suggestion!")
     
@@ -5052,6 +5437,455 @@ class ShoppingBot:
             )
         except Exception as e:
             logging.warning(f"Could not notify user {user_id} about category suggestion result: {e}")
+
+    async def notify_all_users_item_approved(self, suggestion: Dict, approved_by_user_id: int):
+        """Notify all authorized users and admins about item approval"""
+        try:
+            # Get admin info who approved
+            admin_info = self.db.get_user_info(approved_by_user_id)
+            admin_name = admin_info.get('first_name', 'Admin') if admin_info else 'Admin'
+            
+            # Get user info who suggested
+            suggested_by_info = self.db.get_user_info(suggestion['suggested_by'])
+            suggested_by_name = suggested_by_info.get('first_name', 'User') if suggested_by_info else 'User'
+            
+            # Get all authorized users
+            users = self.db.get_all_authorized_users()
+            
+            for user in users:
+                try:
+                    user_lang = self.db.get_user_language(user['user_id'])
+                    if user_lang == 'he':
+                        message = f"✅ **פריט אושר**\n\nהפריט **{suggestion['item_name_en']}** שהוצע על ידי **{suggested_by_name}** אושר על ידי **{admin_name}**.\nהפריט זמין כעת לכל המשתמשים!"
+                    else:
+                        message = f"✅ **Item Approved**\n\nThe item **{suggestion['item_name_en']}** suggested by **{suggested_by_name}** has been approved by **{admin_name}**.\nThe item is now available to all users!"
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about item approval: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about item approval: {e}")
+
+    async def notify_all_users_category_approved(self, suggestion: Dict, approved_by_user_id: int):
+        """Notify all authorized users and admins about category approval"""
+        try:
+            # Get admin info who approved
+            admin_info = self.db.get_user_info(approved_by_user_id)
+            admin_name = admin_info.get('first_name', 'Admin') if admin_info else 'Admin'
+            
+            # Get user info who suggested
+            suggested_by_info = self.db.get_user_info(suggestion['suggested_by'])
+            suggested_by_name = suggested_by_info.get('first_name', 'User') if suggested_by_info else 'User'
+            
+            # Get all authorized users
+            users = self.db.get_all_authorized_users()
+            
+            for user in users:
+                try:
+                    user_lang = self.db.get_user_language(user['user_id'])
+                    if user_lang == 'he':
+                        message = f"✅ **קטגוריה אושרה**\n\nהקטגוריה **{suggestion['name_en']}** שהוצעה על ידי **{suggested_by_name}** אושרה על ידי **{admin_name}**.\nהקטגוריה זמינה כעת לכל המשתמשים!"
+                    else:
+                        message = f"✅ **Category Approved**\n\nThe category **{suggestion['name_en']}** suggested by **{suggested_by_name}** has been approved by **{admin_name}**.\nThe category is now available to all users!"
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about category approval: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about category approval: {e}")
+
+    async def show_rename_items_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show rename items interface for admins"""
+        user_id = update.effective_user.id
+        
+        try:
+            if not self.db.is_user_admin(user_id):
+                if update.message:
+                    await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+                elif update.callback_query:
+                    await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+                return
+        
+            # Get all categories with their items
+            keyboard = []
+            
+            # Add predefined categories
+            for category_key, category_data in CATEGORIES.items():
+                category_name = self.get_category_name(user_id, category_key)
+                keyboard.append([InlineKeyboardButton(
+                    f"{category_data['emoji']} {category_name}",
+                    callback_data=f"rename_items_category_{category_key}"
+                )])
+            
+            # Add custom categories
+            custom_categories = self.db.get_custom_categories()
+            for category in custom_categories:
+                keyboard.append([InlineKeyboardButton(
+                    f"{category['emoji']} {category['name_en']} ({category['name_he']})",
+                    callback_data=f"rename_items_category_{category['category_key']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message = self.get_message(user_id, 'rename_items_title')
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            error_message = f"❌ Error loading rename interface: {str(e)}"
+            if update.message:
+                await update.message.reply_text(error_message)
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(error_message)
+
+    async def show_rename_categories_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show rename categories interface for admins"""
+        user_id = update.effective_user.id
+        
+        try:
+            if not self.db.is_user_admin(user_id):
+                if update.message:
+                    await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+                elif update.callback_query:
+                    await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+                return
+            
+            # Get custom categories
+            custom_categories = self.db.get_custom_categories()
+            
+            if not custom_categories:
+                message = self.get_message(user_id, 'rename_categories_empty')
+                keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
+            else:
+                message = self.get_message(user_id, 'rename_categories_title')
+                keyboard = []
+                
+                for category in custom_categories:
+                    keyboard.append([InlineKeyboardButton(
+                        f"{category['emoji']} {category['name_en']} ({category['name_he']})",
+                        callback_data=f"rename_category_{category['category_key']}"
+                    )])
+                
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+            
+        except Exception as e:
+            error_message = f"❌ Error loading category rename options: {str(e)}"
+            if update.message:
+                await update.message.reply_text(error_message)
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(error_message)
+
+    async def show_items_to_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Show items in a category for renaming"""
+        user_id = update.effective_user.id
+        
+        try:
+            if not self.db.is_user_admin(user_id):
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+                return
+            
+            # Get category items
+            items = self.get_category_items(user_id, category_key)
+            category_name = self.get_category_name(user_id, category_key)
+            
+            if not items:
+                message = self.get_message(user_id, 'rename_items_category_empty').format(category_name=category_name)
+                keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
+            else:
+                message = self.get_message(user_id, 'rename_items_category_title').format(category_name=category_name)
+                keyboard = []
+                
+                for item in items:
+                    keyboard.append([InlineKeyboardButton(
+                        f"✏️ {item}",
+                        callback_data=f"rename_item_{category_key}_{item}"
+                    )])
+                
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            print(f"ERROR in show_items_to_rename: {e}")
+            error_message = f"❌ Error loading items for renaming: {str(e)}"
+            await update.callback_query.edit_message_text(error_message)
+
+    async def start_item_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, item_name: str):
+        """Start the item rename process"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Store rename data
+        context.user_data['renaming_item'] = True
+        context.user_data['rename_category'] = category_key
+        context.user_data['rename_old_name'] = item_name
+        context.user_data['rename_step'] = 'english'
+        
+        category_name = self.get_category_name(user_id, category_key)
+        message = self.get_message(user_id, 'rename_item_prompt').format(category_name=category_name, item_name=item_name)
+        
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_cancel'), callback_data="cancel_rename")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def start_category_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Start the category rename process"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get category info
+        category = self.db.get_category_by_key(category_key)
+        if not category:
+            await update.callback_query.edit_message_text("❌ Category not found.")
+            return
+        
+        # Store rename data
+        context.user_data['renaming_category'] = True
+        context.user_data['rename_category_key'] = category_key
+        context.user_data['rename_old_name_en'] = category['name_en']
+        context.user_data['rename_old_name_he'] = category['name_he']
+        
+        message = self.get_message(user_id, 'rename_category_prompt').format(
+            category_name_en=category['name_en'], 
+            category_name_he=category['name_he']
+        )
+        
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_cancel'), callback_data="cancel_rename")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def cancel_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel the rename process"""
+        user_id = update.effective_user.id
+        
+        # Clear rename data
+        context.user_data.pop('renaming_item', None)
+        context.user_data.pop('renaming_category', None)
+        context.user_data.pop('rename_category', None)
+        context.user_data.pop('rename_category_key', None)
+        context.user_data.pop('rename_old_name', None)
+        context.user_data.pop('rename_old_name_en', None)
+        context.user_data.pop('rename_old_name_he', None)
+        context.user_data.pop('rename_new_name_en', None)
+        context.user_data.pop('rename_step', None)
+        
+        await update.callback_query.edit_message_text(self.get_message(user_id, 'rename_cancelled'))
+        
+        # Return to admin management menu
+        await self.show_admin_management_menu(update, context)
+
+    async def process_item_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Process item rename"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        category_key = context.user_data.get('rename_category')
+        old_name = context.user_data.get('rename_old_name')
+        
+        if not category_key or not old_name:
+            await update.message.reply_text(self.get_message(user_id, 'rename_missing_data'))
+            return
+        
+        # Check current step
+        rename_step = context.user_data.get('rename_step', 'english')
+        
+        if rename_step == 'english':
+            # User entered English name
+            new_name_en = text.strip()
+            
+            # Check if new name already exists in category
+            if self.db.is_item_in_category(new_name_en, category_key):
+                await update.message.reply_text(self.get_message(user_id, 'rename_duplicate_item').format(new_name=new_name_en))
+                return
+            
+            # Store English name and ask for Hebrew
+            context.user_data['rename_new_name_en'] = new_name_en
+            context.user_data['rename_step'] = 'hebrew'
+            
+            category_name = self.get_category_name(user_id, category_key)
+            message = self.get_message(user_id, 'rename_item_hebrew_prompt').format(
+                item_name_en=new_name_en,
+                category_name=category_name
+            )
+            
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_cancel'), callback_data="cancel_rename")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        elif rename_step == 'hebrew':
+            # User entered Hebrew name
+            new_name_he = text.strip()
+            new_name_en = context.user_data.get('rename_new_name_en')
+            
+            # Rename the item in the database
+            success = self.db.rename_item(old_name, new_name_en, category_key, new_name_he)
+            
+            if success:
+                category_name = self.get_category_name(user_id, category_key)
+                await update.message.reply_text(self.get_message(user_id, 'item_renamed_success').format(
+                    category_name=category_name, 
+                    old_name=old_name, 
+                    new_name=new_name_en
+                ))
+                
+                # Notify all users about the rename
+                await self.notify_item_rename(old_name, new_name_en, category_name)
+            else:
+                await update.message.reply_text(self.get_message(user_id, 'rename_error'))
+            
+            # Clear rename data
+            context.user_data.pop('renaming_item', None)
+            context.user_data.pop('rename_category', None)
+            context.user_data.pop('rename_old_name', None)
+            context.user_data.pop('rename_new_name_en', None)
+            context.user_data.pop('rename_step', None)
+
+    async def process_category_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Process category rename"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        category_key = context.user_data.get('rename_category_key')
+        old_name_en = context.user_data.get('rename_old_name_en')
+        old_name_he = context.user_data.get('rename_old_name_he')
+        
+        if not category_key or not old_name_en:
+            await update.message.reply_text(self.get_message(user_id, 'rename_missing_data'))
+            return
+        
+        # Check current step
+        rename_step = context.user_data.get('rename_step', 'english')
+        
+        if rename_step == 'english':
+            # User entered English name
+            new_name_en = text.strip()
+            
+            # Check if category name already exists
+            if self.db.is_category_name_exists(new_name_en):
+                await update.message.reply_text(self.get_message(user_id, 'rename_duplicate_category').format(new_name=new_name_en))
+                return
+            
+            # Store English name and ask for Hebrew
+            context.user_data['rename_new_name_en'] = new_name_en
+            context.user_data['rename_step'] = 'hebrew'
+            
+            message = self.get_message(user_id, 'rename_category_hebrew_prompt').format(
+                category_name_en=new_name_en
+            )
+            
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_cancel'), callback_data="cancel_rename")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        elif rename_step == 'hebrew':
+            # User entered Hebrew name
+            new_name_he = text.strip()
+            new_name_en = context.user_data.get('rename_new_name_en')
+            
+            # Rename the category in the database
+            success = self.db.rename_category(category_key, new_name_en, new_name_he)
+            
+            if success:
+                await update.message.reply_text(self.get_message(user_id, 'category_renamed_success').format(
+                    old_name_en=old_name_en,
+                    old_name_he=old_name_he,
+                    new_name_en=new_name_en,
+                    new_name_he=new_name_he
+                ))
+                
+                # Notify all users about the rename
+                await self.notify_category_rename(old_name_en, new_name_en)
+            else:
+                await update.message.reply_text(self.get_message(user_id, 'rename_error'))
+            
+            # Clear rename data
+            context.user_data.pop('renaming_category', None)
+            context.user_data.pop('rename_category_key', None)
+            context.user_data.pop('rename_old_name_en', None)
+            context.user_data.pop('rename_old_name_he', None)
+            context.user_data.pop('rename_new_name_en', None)
+            context.user_data.pop('rename_step', None)
+
+    async def notify_item_rename(self, old_name: str, new_name: str, category_name: str):
+        """Notify all users about item rename"""
+        try:
+            users = self.db.get_all_users()
+            for user in users:
+                try:
+                    user_lang = self.db.get_user_language(user['user_id'])
+                    if user_lang == 'he':
+                        message = f"✏️ **פריט שונה שם**\n\nהפריט **{old_name}** בקטגוריה **{category_name}** שונה ל-**{new_name}**."
+                    else:
+                        message = f"✏️ **Item Renamed**\n\nThe item **{old_name}** in category **{category_name}** has been renamed to **{new_name}**."
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about item rename: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about item rename: {e}")
+
+    async def notify_category_rename(self, old_name: str, new_name: str):
+        """Notify all users about category rename"""
+        try:
+            users = self.db.get_all_users()
+            for user in users:
+                try:
+                    user_lang = self.db.get_user_language(user['user_id'])
+                    if user_lang == 'he':
+                        message = f"✏️ **קטגוריה שונה שם**\n\nהקטגוריה **{old_name}** שונה ל-**{new_name}**."
+                    else:
+                        message = f"✏️ **Category Renamed**\n\nThe category **{old_name}** has been renamed to **{new_name}**."
+                    
+                    await self.application.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not notify user {user['user_id']} about category rename: {e}")
+        except Exception as e:
+            logging.error(f"Error notifying users about category rename: {e}")
 
     def run(self):
         """Run the bot"""

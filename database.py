@@ -180,6 +180,31 @@ class Database:
                     )
                 ''')
                 
+                # Deleted items table (items permanently removed from categories)
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS deleted_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category_key TEXT NOT NULL,
+                        item_name TEXT NOT NULL,
+                        deleted_by INTEGER,
+                        deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (deleted_by) REFERENCES users(user_id)
+                    )
+                ''')
+                
+                # Dynamic category items table (for approved suggestions)
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS dynamic_category_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category_key TEXT NOT NULL,
+                        item_name_en TEXT NOT NULL,
+                        item_name_he TEXT,
+                        added_by INTEGER,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (added_by) REFERENCES users(user_id)
+                    )
+                ''')
+                
                 conn.commit()
                 logging.info("Database initialized successfully")
                 
@@ -561,10 +586,24 @@ class Database:
             return []
 
     def add_item_suggestion(self, suggested_by: int, category_key: str, item_name_en: str, item_name_he: str = None, list_id: int = 1) -> bool:
-        """Add a new item suggestion"""
+        """Add a new item suggestion (with duplicate checking)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                # Check if item already exists in category (static or dynamic)
+                if self.is_item_in_category(category_key, item_name_en):
+                    return False  # Item already exists
+                
+                # Check if there's already a pending suggestion for this item
+                cursor.execute('''
+                    SELECT COUNT(*) FROM item_suggestions
+                    WHERE category_key = ? AND LOWER(item_name_en) = LOWER(?) AND status = 'pending'
+                ''', (category_key, item_name_en))
+                
+                if cursor.fetchone()[0] > 0:
+                    return False  # Already suggested
+                
                 cursor.execute('''
                     INSERT INTO item_suggestions (suggested_by, category_key, item_name_en, item_name_he, list_id)
                     VALUES (?, ?, ?, ?, ?)
@@ -619,10 +658,29 @@ class Database:
             return []
 
     def approve_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
-        """Approve an item suggestion"""
+        """Approve an item suggestion and add it to the category"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                # Get the suggestion details
+                cursor.execute('''
+                    SELECT category_key, item_name_en, item_name_he FROM item_suggestions
+                    WHERE id = ? AND status = 'pending'
+                ''', (suggestion_id,))
+                
+                suggestion = cursor.fetchone()
+                if not suggestion:
+                    return False
+                
+                category_key, item_name_en, item_name_he = suggestion
+                
+                # Add the item to the dynamic category items
+                success = self.add_dynamic_category_item(category_key, item_name_en, item_name_he, approved_by)
+                if not success:
+                    return False  # Failed to add item (probably duplicate)
+                
+                # Update the suggestion status
                 cursor.execute('''
                     UPDATE item_suggestions 
                     SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP
@@ -1127,21 +1185,52 @@ class Database:
             logging.error(f"Error deleting custom category: {e}")
             return False
 
-    # Category Suggestions Methods
-    def add_category_suggestion(self, suggested_by: int, category_key: str, emoji: str, name_en: str, name_he: str) -> bool:
-        """Add a new category suggestion"""
+    def count_items_in_category(self, category_key: str) -> int:
+        """Count items in a specific category across all lists"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM shopping_items 
+                    WHERE category = ?
+                ''', (category_key,))
+                result = cursor.fetchone()
+                return result[0] if result else 0
+        except Exception as e:
+            logging.error(f"Error counting items in category: {e}")
+            return 0
+
+    # Category Suggestions Methods
+    def add_category_suggestion(self, suggested_by: int, category_key: str, emoji: str, name_en: str, name_he: str) -> bool:
+        """Add a new category suggestion (with duplicate checking)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if category already exists (predefined or custom)
+                cursor.execute('''
+                    SELECT COUNT(*) FROM custom_categories
+                    WHERE LOWER(category_key) = LOWER(?) OR LOWER(name_en) = LOWER(?)
+                ''', (category_key, name_en))
+                
+                if cursor.fetchone()[0] > 0:
+                    return False  # Category already exists
+                
+                # Check if there's already a pending suggestion for this category
+                cursor.execute('''
+                    SELECT COUNT(*) FROM category_suggestions
+                    WHERE LOWER(category_key) = LOWER(?) OR LOWER(name_en) = LOWER(?) AND status = 'pending'
+                ''', (category_key, name_en))
+                
+                if cursor.fetchone()[0] > 0:
+                    return False  # Already suggested
+                
                 cursor.execute('''
                     INSERT INTO category_suggestions (suggested_by, category_key, emoji, name_en, name_he)
                     VALUES (?, ?, ?, ?, ?)
                 ''', (suggested_by, category_key, emoji, name_en, name_he))
                 conn.commit()
                 return True
-        except sqlite3.IntegrityError:
-            logging.warning(f"Category suggestion '{category_key}' already exists")
-            return False
         except Exception as e:
             logging.error(f"Error adding category suggestion: {e}")
             return False
@@ -1261,4 +1350,271 @@ class Database:
                 return None
         except Exception as e:
             logging.error(f"Error getting category suggestion by ID: {e}")
+            return None
+
+    # Deleted Items Methods
+    def add_deleted_item(self, category_key: str, item_name: str, deleted_by: int) -> bool:
+        """Add an item to the deleted items list"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO deleted_items (category_key, item_name, deleted_by)
+                    VALUES (?, ?, ?)
+                ''', (category_key, item_name, deleted_by))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error adding deleted item: {e}")
+            return False
+
+    def get_deleted_items_by_category(self, category_key: str) -> List[str]:
+        """Get all deleted items for a category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT item_name FROM deleted_items
+                    WHERE category_key = ?
+                ''', (category_key,))
+                rows = cursor.fetchall()
+                return [row[0] for row in rows]
+        except Exception as e:
+            logging.error(f"Error getting deleted items by category: {e}")
+            return []
+
+    def is_item_deleted(self, category_key: str, item_name: str) -> bool:
+        """Check if an item is deleted from a category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM deleted_items
+                    WHERE category_key = ? AND item_name = ?
+                ''', (category_key, item_name))
+                result = cursor.fetchone()
+                return result[0] > 0 if result else False
+        except Exception as e:
+            logging.error(f"Error checking if item is deleted: {e}")
+            return False
+
+    # Dynamic Category Items Methods
+    def add_dynamic_category_item(self, category_key: str, item_name_en: str, item_name_he: str = None, added_by: int = None) -> bool:
+        """Add a new item to a category dynamically"""
+        try:
+            # Check if item already exists in static or dynamic items
+            if self.is_item_in_category(category_key, item_name_en):
+                return False  # Item already exists
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO dynamic_category_items (category_key, item_name_en, item_name_he, added_by)
+                    VALUES (?, ?, ?, ?)
+                ''', (category_key, item_name_en, item_name_he, added_by))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error adding dynamic category item: {e}")
+            return False
+
+    def get_dynamic_category_items(self, category_key: str) -> List[Dict]:
+        """Get all dynamic items for a category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT item_name_en, item_name_he FROM dynamic_category_items
+                    WHERE category_key = ?
+                    ORDER BY item_name_en
+                ''', (category_key,))
+                rows = cursor.fetchall()
+                return [{'en': row[0], 'he': row[1] or row[0]} for row in rows]
+        except Exception as e:
+            logging.error(f"Error getting dynamic category items: {e}")
+            return []
+
+    def is_item_in_category(self, category_key: str, item_name: str) -> bool:
+        """Check if an item exists in a category (static or dynamic)"""
+        try:
+            # Import here to avoid circular imports
+            from config import CATEGORIES
+            
+            # Check static items from config.py
+            category = CATEGORIES.get(category_key, {})
+            if category:
+                static_items_en = category.get('items', {}).get('en', [])
+                static_items_he = category.get('items', {}).get('he', [])
+                
+                # Check if item exists in static items (case-insensitive)
+                for static_item in static_items_en + static_items_he:
+                    if static_item.lower() == item_name.lower():
+                        # Check if item is deleted
+                        if not self.is_item_deleted(category_key, item_name):
+                            return True
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check dynamic items
+                cursor.execute('''
+                    SELECT COUNT(*) FROM dynamic_category_items
+                    WHERE category_key = ? AND LOWER(item_name_en) = LOWER(?)
+                ''', (category_key, item_name))
+                
+                if cursor.fetchone()[0] > 0:
+                    return True
+                
+                return False
+        except Exception as e:
+            logging.error(f"Error checking if item is in category: {e}")
+            return False
+
+    def remove_dynamic_category_item(self, category_key: str, item_name: str) -> bool:
+        """Remove a dynamic item from a category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM dynamic_category_items
+                    WHERE category_key = ? AND LOWER(item_name_en) = LOWER(?)
+                ''', (category_key, item_name))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error removing dynamic category item: {e}")
+            return False
+
+    def rename_item(self, old_name: str, new_name_en: str, category_key: str, new_name_he: str = None) -> bool:
+        """Rename an item in a category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Use Hebrew name if provided, otherwise use English name for both
+                if new_name_he is None:
+                    new_name_he = new_name_en
+                
+                # Check if it's a static item (from config.py) or dynamic item
+                is_static_item = self.is_static_item(old_name, category_key)
+                
+                if is_static_item:
+                    # For static items, we need to add them to dynamic_category_items with new name
+                    # and add the old name to deleted_items to hide it from static list
+                    
+                    # Add old name to deleted_items to hide it from static list
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO deleted_items (item_name, category_key)
+                        VALUES (?, ?)
+                    ''', (old_name, category_key))
+                    
+                    # Add new name to dynamic_category_items
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO dynamic_category_items (category_key, item_name_en, item_name_he)
+                        VALUES (?, ?, ?)
+                    ''', (category_key, new_name_en, new_name_he))
+                    
+                else:
+                    # For dynamic items, just update the existing record
+                    cursor.execute('''
+                        UPDATE dynamic_category_items
+                        SET item_name_en = ?, item_name_he = ?
+                        WHERE category_key = ? AND LOWER(item_name_en) = LOWER(?)
+                    ''', (new_name_en, new_name_he, category_key, old_name))
+                
+                # Update in shopping_items table (for items currently in shopping lists)
+                cursor.execute('''
+                    UPDATE shopping_items
+                    SET item_name = ?
+                    WHERE category = ? AND LOWER(item_name) = LOWER(?)
+                ''', (new_name_en, category_key, old_name))
+                
+                conn.commit()
+                return True  # Always return True for static items, check rowcount for dynamic items
+        except Exception as e:
+            logging.error(f"Error renaming item: {e}")
+            return False
+
+    def rename_category(self, category_key: str, new_name_en: str, new_name_he: str) -> bool:
+        """Rename a custom category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Update in custom_categories table
+                cursor.execute('''
+                    UPDATE custom_categories
+                    SET name_en = ?, name_he = ?
+                    WHERE category_key = ?
+                ''', (new_name_en, new_name_he, category_key))
+                
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error renaming category: {e}")
+            return False
+
+    def is_category_name_exists(self, category_name: str) -> bool:
+        """Check if a category name already exists"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check in custom_categories table
+                cursor.execute('''
+                    SELECT COUNT(*) FROM custom_categories
+                    WHERE LOWER(name_en) = LOWER(?)
+                ''', (category_name,))
+                
+                count = cursor.fetchone()[0]
+                return count > 0
+        except Exception as e:
+            logging.error(f"Error checking if category name exists: {e}")
+            return False
+
+    def is_static_item(self, item_name: str, category_key: str) -> bool:
+        """Check if an item is a static item from config.py"""
+        try:
+            # Import here to avoid circular imports
+            from config import CATEGORIES
+            
+            # Check if the item exists in the static categories
+            if category_key in CATEGORIES:
+                items_dict = CATEGORIES[category_key].get('items', {})
+                # Check both English and Hebrew items
+                en_items = items_dict.get('en', [])
+                he_items = items_dict.get('he', [])
+                return (any(item.lower() == item_name.lower() for item in en_items) or
+                        any(item.lower() == item_name.lower() for item in he_items))
+            
+            return False
+        except Exception as e:
+            logging.error(f"Error checking if item is static: {e}")
+            return False
+
+    def get_category_by_key(self, category_key: str) -> Optional[dict]:
+        """Get a custom category by its key"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT category_key, name_en, name_he, emoji, created_at
+                    FROM custom_categories
+                    WHERE category_key = ?
+                ''', (category_key,))
+                
+                result = cursor.fetchone()
+                if result:
+                    return {
+                        'category_key': result[0],
+                        'name_en': result[1],
+                        'name_he': result[2],
+                        'emoji': result[3],
+                        'created_at': result[4]
+                    }
+                return None
+        except Exception as e:
+            logging.error(f"Error getting category by key: {e}")
             return None
