@@ -1697,7 +1697,7 @@ class ShoppingBot:
         if not context.args:
             await update.message.reply_text(
                 f"❌ **Usage:** `/addadmin <user_id>`\n\n"
-                f"{self.get_message(user_id, 'addadmin_example')}",
+                f"{self.get_message(update.effective_user.id, 'addadmin_example')}",
                 parse_mode='Markdown'
             )
             return
