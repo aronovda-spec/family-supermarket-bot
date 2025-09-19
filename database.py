@@ -1297,6 +1297,49 @@ class Database:
             logging.error(f"Error getting pending category suggestions: {e}")
             return []
 
+    def get_pending_item_suggestions_count(self) -> int:
+        """Get count of pending item suggestions"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM item_suggestions 
+                    WHERE status = 'pending'
+                ''')
+                return cursor.fetchone()[0]
+        except Exception as e:
+            logging.error(f"Error getting pending item suggestions count: {e}")
+            return 0
+
+    def get_pending_category_suggestions_count(self) -> int:
+        """Get count of pending category suggestions"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM category_suggestions 
+                    WHERE status = 'pending'
+                ''')
+                return cursor.fetchone()[0]
+        except Exception as e:
+            logging.error(f"Error getting pending category suggestions count: {e}")
+            return 0
+
+    def get_total_pending_suggestions_count(self) -> int:
+        """Get total count of pending suggestions (items + categories)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT 
+                        (SELECT COUNT(*) FROM item_suggestions WHERE status = 'pending') +
+                        (SELECT COUNT(*) FROM category_suggestions WHERE status = 'pending')
+                ''')
+                return cursor.fetchone()[0]
+        except Exception as e:
+            logging.error(f"Error getting total pending suggestions count: {e}")
+            return 0
+
     def approve_category_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
         """Approve a category suggestion and create the category"""
         try:
