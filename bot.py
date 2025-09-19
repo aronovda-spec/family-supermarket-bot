@@ -880,7 +880,7 @@ class ShoppingBot:
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.callback_query.edit_message_text(full_summary, reply_markup=reply_markup)
 
-    async def my_items_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def my_items_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int = None):
         """Handle /myitems command - show items added by current user"""
         if not self.db.is_user_authorized(update.effective_user.id):
             if update.message:
@@ -889,7 +889,11 @@ class ShoppingBot:
                 await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
-        user_items = self.db.get_items_by_user(update.effective_user.id)
+        # If list_id is provided, get items for that specific list, otherwise get all items
+        if list_id:
+            user_items = self.db.get_items_by_user_in_list(update.effective_user.id, list_id)
+        else:
+            user_items = self.db.get_items_by_user(update.effective_user.id)
         
         if not user_items:
             if update.message:
@@ -993,8 +997,9 @@ class ShoppingBot:
             await query.delete_message()
             await self.show_main_menu(update, context)
         
-        elif data == "my_items":
-            await self.my_items_command(update, context)
+        elif data.startswith("my_items_"):
+            list_id = int(data.replace("my_items_", ""))
+            await self.my_items_command(update, context, list_id)
         
         elif data == "my_summary":
             await self.summary_command(update, context)
@@ -3643,9 +3648,8 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")]
         ]
         
-        # Add supermarket-specific options
-        if target_list['list_type'] == 'supermarket':
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data="my_items")])
+        # Add "My Items" for all lists
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data=f"my_items_{list_id}")])
         
         # Add admin-only options
         if self.db.is_user_admin(user_id):

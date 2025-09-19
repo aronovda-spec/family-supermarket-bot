@@ -313,6 +313,54 @@ class Database:
             logging.error(f"Error getting items by user: {e}")
             return []
 
+    def get_items_by_user_in_list(self, user_id: int, list_id: int) -> List[Dict]:
+        """Get items added by a specific user in a specific list"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT si.id, si.item_name, si.category, si.notes, si.created_at
+                    FROM shopping_items si
+                    WHERE si.added_by = ? AND si.list_id = ?
+                    ORDER BY si.category, si.item_name
+                ''', (user_id, list_id))
+                
+                items = []
+                for row in cursor.fetchall():
+                    item_id, item_name, category, notes, created_at = row
+                    
+                    # Get notes for this item
+                    cursor.execute('''
+                        SELECT in_.note, u.first_name, u.username
+                        FROM item_notes in_
+                        LEFT JOIN users u ON in_.user_id = u.user_id
+                        WHERE in_.item_id = ?
+                        ORDER BY in_.created_at
+                    ''', (item_id,))
+                    
+                    item_notes = []
+                    for note_row in cursor.fetchall():
+                        note_text, note_first_name, note_username = note_row
+                        item_notes.append({
+                            'note': note_text,
+                            'user_name': note_first_name or note_username or 'Unknown'
+                        })
+                    
+                    items.append({
+                        'id': item_id,
+                        'name': item_name,
+                        'category': category,
+                        'notes': notes,
+                        'created_at': created_at,
+                        'item_notes': item_notes
+                    })
+                
+                return items
+                
+        except Exception as e:
+            logging.error(f"Error getting items by user in list: {e}")
+            return []
+
     def delete_item(self, item_id: int) -> Optional[str]:
         """Delete an item from the shopping list"""
         try:
