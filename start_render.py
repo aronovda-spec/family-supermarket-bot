@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Combined startup script for Render deployment
-Runs both the Telegram bot and health check server
+Enhanced startup script for Render Web Service deployment
+Runs both the Telegram bot and health check server with better error handling
 """
 
 import asyncio
@@ -10,7 +10,17 @@ import subprocess
 import sys
 import os
 import time
+import signal
 from datetime import datetime
+
+# Global flag for graceful shutdown
+shutdown_flag = False
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    global shutdown_flag
+    print(f"\n🛑 Received signal {signum}, shutting down gracefully...")
+    shutdown_flag = True
 
 def run_health_server():
     """Run the health check server in a separate thread"""
@@ -30,8 +40,15 @@ def run_bot():
         print(f"❌ Bot error: {e}")
 
 def main():
+    global shutdown_flag
+    
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     print("🚀 Starting Family Shopping List Bot on Render...")
     print(f"⏰ Started at: {datetime.now()}")
+    print(f"🌐 Service type: Web Service (with health checks)")
     
     # Start health check server in a separate thread
     health_thread = threading.Thread(target=run_health_server, daemon=True)
