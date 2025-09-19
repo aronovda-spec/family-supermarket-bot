@@ -33,11 +33,14 @@ def run_health_server():
 def run_bot():
     """Run the Telegram bot"""
     try:
-        import run_bot
-        # This will run the bot
-        asyncio.run(run_bot.main())
+        from bot import ShoppingBot
+        # Create and run the bot directly
+        bot = ShoppingBot()
+        bot.run()
     except Exception as e:
         print(f"❌ Bot error: {e}")
+        import traceback
+        traceback.print_exc()
 
 def main():
     global shutdown_flag
