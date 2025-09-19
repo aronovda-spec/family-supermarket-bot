@@ -1163,7 +1163,7 @@ class ShoppingBot:
             await self.start_category_creation(update, context)
         
         elif data == "manage_categories":
-            await self.show_manage_categories(update, context)
+            await self.show_manage_categories(update, context, back_to="admin_panel")
         
         # Category suggestion callbacks
         elif data == "cancel_category_suggestion":
@@ -1795,6 +1795,7 @@ class ShoppingBot:
         message_parts.append(f"\n📊 **Total Users:** {len(users)}")
         message_parts.append("\n💡 **Commands:**")
         message_parts.append("• `/authorize <user_id>` - Authorize a regular user")
+        message_parts.append("• `/removeuser <user_id>` - Remove user authorization")
         message_parts.append("• `/addadmin <user_id>` - Promote user to admin")
         message_parts.append("• `/users` - Show this list")
 
@@ -4342,7 +4343,7 @@ class ShoppingBot:
             await update.message.reply_text("❌ Only admins can manage categories.")
             return
         
-        await self.show_manage_categories(update, context)
+        await self.show_manage_categories(update, context, back_to="main_menu")
     
     async def start_category_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start the category creation process"""
@@ -4502,11 +4503,15 @@ class ShoppingBot:
                 name_he=hebrew_name
             )
             
-            # Add back to menu button
+            # Add back to categories button so user can see their new category
             keyboard = [[InlineKeyboardButton(
+                "📂 View Categories",
+                callback_data="categories"
+            )]]
+            keyboard.append([InlineKeyboardButton(
                 self.get_message(user_id, 'btn_back_menu'),
                 callback_data="main_menu"
-            )]]
+            )])
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             if update.message:
@@ -4518,7 +4523,7 @@ class ShoppingBot:
                 self.get_message(user_id, 'category_already_exists').format(category_name=category_name)
             )
     
-    async def show_manage_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def show_manage_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE, back_to: str = "main_menu"):
         """Show manage categories interface"""
         user_id = update.effective_user.id
         
@@ -4529,7 +4534,7 @@ class ShoppingBot:
             message = self.get_message(user_id, 'no_custom_categories')
             keyboard = [[InlineKeyboardButton(
                 self.get_message(user_id, 'btn_back_menu'),
-                callback_data="main_menu"
+                callback_data=back_to
             )]]
         else:
             message = self.get_message(user_id, 'manage_categories_title')
@@ -4543,7 +4548,7 @@ class ShoppingBot:
             
             keyboard.append([InlineKeyboardButton(
                 self.get_message(user_id, 'btn_back_menu'),
-                callback_data="main_menu"
+                callback_data=back_to
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
