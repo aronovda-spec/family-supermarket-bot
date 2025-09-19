@@ -493,6 +493,35 @@ class Database:
             logging.error(f"Error getting all users: {e}")
             return []
 
+    def get_admin_users(self) -> List[Dict]:
+        """Get all admin users"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT user_id, username, first_name, last_name, is_admin, is_authorized
+                    FROM users
+                    WHERE is_admin = 1
+                    ORDER BY first_name, username
+                ''')
+                
+                admins = []
+                for row in cursor.fetchall():
+                    admins.append({
+                        'user_id': row[0],
+                        'username': row[1],
+                        'first_name': row[2],
+                        'last_name': row[3],
+                        'is_admin': row[4],
+                        'is_authorized': row[5]
+                    })
+                
+                return admins
+                
+        except Exception as e:
+            logging.error(f"Error getting admin users: {e}")
+            return []
+
     def get_user_language(self, user_id: int) -> str:
         """Get user's preferred language"""
         try:
@@ -714,7 +743,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT s.id, s.category_key, s.item_name_en, s.item_name_he, s.status, s.created_at,
+                    SELECT s.id, s.category_key, s.item_name_en, s.item_name_he, s.status, s.created_at, s.suggested_by,
                            u.username, u.first_name, u.last_name
                     FROM item_suggestions s
                     JOIN users u ON s.suggested_by = u.user_id
@@ -729,9 +758,10 @@ class Database:
                         'item_name_he': row[3],
                         'status': row[4],
                         'created_at': row[5],
-                        'suggested_by_username': row[6],
-                        'suggested_by_first_name': row[7],
-                        'suggested_by_last_name': row[8]
+                        'suggested_by': row[6],
+                        'suggested_by_username': row[7],
+                        'suggested_by_first_name': row[8],
+                        'suggested_by_last_name': row[9]
                     }
                 return None
         except Exception as e:
@@ -1327,7 +1357,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT s.id, s.category_key, s.emoji, s.name_en, s.name_he, s.status, s.created_at,
+                    SELECT s.id, s.category_key, s.emoji, s.name_en, s.name_he, s.status, s.created_at, s.suggested_by,
                            u.username, u.first_name, u.last_name
                     FROM category_suggestions s
                     JOIN users u ON s.suggested_by = u.user_id
@@ -1343,9 +1373,10 @@ class Database:
                         'name_he': row[4],
                         'status': row[5],
                         'created_at': row[6],
-                        'suggested_by_username': row[7],
-                        'suggested_by_first_name': row[8],
-                        'suggested_by_last_name': row[9]
+                        'suggested_by': row[7],
+                        'suggested_by_username': row[8],
+                        'suggested_by_first_name': row[9],
+                        'suggested_by_last_name': row[10]
                     }
                 return None
         except Exception as e:
