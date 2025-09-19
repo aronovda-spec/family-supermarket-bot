@@ -89,6 +89,65 @@ class ShoppingBot:
         # Message handler for custom item addition
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
+    async def setup_bot_commands(self):
+        """Set up bot commands menu for Telegram command suggestions"""
+        from telegram import BotCommand
+        
+        # Define bot commands with descriptions (English)
+        commands = [
+            BotCommand("start", "🚀 Start using the bot"),
+            BotCommand("menu", "📱 Show main menu"),
+            BotCommand("help", "❓ Show help guide"),
+            BotCommand("categories", "📋 Browse item categories"),
+            BotCommand("add", "➕ Add custom item"),
+            BotCommand("list", "📝 View shopping list"),
+            BotCommand("summary", "📊 Generate summary report"),
+            BotCommand("myitems", "👤 View my added items"),
+            BotCommand("search", "🔍 Search for items"),
+            BotCommand("language", "🌍 Change language"),
+            BotCommand("users", "👥 Manage users (Admin)"),
+            BotCommand("authorize", "✅ Authorize user (Admin)"),
+            BotCommand("addadmin", "👑 Promote to admin (Admin)"),
+            BotCommand("broadcast", "📢 Send message to all (Admin)"),
+            BotCommand("suggest", "💡 Suggest new item"),
+            BotCommand("managesuggestions", "📝 Manage suggestions (Admin)"),
+            BotCommand("newitem", "🆕 Add new item to category (Admin)"),
+            BotCommand("reset", "🔄 Reset list (Admin)")
+        ]
+        
+        # Define Hebrew commands
+        hebrew_commands = [
+            BotCommand("start", "🚀 התחל להשתמש בבוט"),
+            BotCommand("menu", "📱 הצג תפריט ראשי"),
+            BotCommand("help", "❓ הצג מדריך עזרה"),
+            BotCommand("categories", "📋 עיין בקטגוריות פריטים"),
+            BotCommand("add", "➕ הוסף פריט מותאם אישית"),
+            BotCommand("list", "📝 צפה ברשימת קניות"),
+            BotCommand("summary", "📊 צור דוח סיכום"),
+            BotCommand("myitems", "👤 צפה בפריטים שהוספתי"),
+            BotCommand("search", "🔍 חפש פריטים"),
+            BotCommand("language", "🌍 שנה שפה"),
+            BotCommand("users", "👥 נהל משתמשים (מנהל)"),
+            BotCommand("authorize", "✅ אשר משתמש (מנהל)"),
+            BotCommand("addadmin", "👑 קדם למנהל (מנהל)"),
+            BotCommand("broadcast", "📢 שלח הודעה לכולם (מנהל)"),
+            BotCommand("suggest", "💡 הצע פריט חדש"),
+            BotCommand("managesuggestions", "📝 נהל הצעות (מנהל)"),
+            BotCommand("newitem", "🆕 הוסף פריט חדש לקטגוריה (מנהל)"),
+            BotCommand("reset", "🔄 אפס רשימה (מנהל)")
+        ]
+        
+        try:
+            # Set English commands (default)
+            await self.application.bot.set_my_commands(commands)
+            
+            # Set Hebrew commands for Hebrew language
+            await self.application.bot.set_my_commands(hebrew_commands, language_code="he")
+            
+            logger.info("Bot commands menu set up successfully (English + Hebrew)")
+        except Exception as e:
+            logger.error(f"Error setting up bot commands: {e}")
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         user = update.effective_user
@@ -3902,6 +3961,12 @@ class ShoppingBot:
     def run(self):
         """Run the bot"""
         logger.info("Starting Shopping Bot...")
+        
+        # Set up bot commands menu
+        async def post_init(application):
+            await self.setup_bot_commands()
+        
+        self.application.post_init = post_init
         self.application.run_polling()
 
 if __name__ == "__main__":
