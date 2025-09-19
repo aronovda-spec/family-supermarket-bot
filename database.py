@@ -148,6 +148,38 @@ class Database:
                     else:
                         print(f"Error adding list_id column to item_suggestions: {e}")
                 
+                # Custom categories table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS custom_categories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category_key TEXT UNIQUE NOT NULL,
+                        emoji TEXT NOT NULL,
+                        name_en TEXT NOT NULL,
+                        name_he TEXT NOT NULL,
+                        created_by INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (created_by) REFERENCES users (user_id)
+                    )
+                ''')
+                
+                # Category suggestions table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS category_suggestions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        suggested_by INTEGER NOT NULL,
+                        category_key TEXT NOT NULL,
+                        emoji TEXT NOT NULL,
+                        name_en TEXT NOT NULL,
+                        name_he TEXT NOT NULL,
+                        status TEXT DEFAULT 'pending',
+                        approved_by INTEGER,
+                        approved_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (suggested_by) REFERENCES users (user_id),
+                        FOREIGN KEY (approved_by) REFERENCES users (user_id)
+                    )
+                ''')
+                
                 conn.commit()
                 logging.info("Database initialized successfully")
                 
@@ -218,6 +250,22 @@ class Database:
                 return result and result[0]
         except Exception as e:
             logging.error(f"Error checking user authorization: {e}")
+            return False
+
+    def remove_user_authorization(self, user_id: int) -> bool:
+        """Remove user authorization (but keep user in database)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE users 
+                    SET is_authorized = FALSE 
+                    WHERE user_id = ?
+                ''', (user_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error removing user authorization: {e}")
             return False
 
     def is_user_admin(self, user_id: int) -> bool:
@@ -997,3 +1045,220 @@ class Database:
         except Exception as e:
             logging.error(f"Error deactivating maintenance mode: {e}")
             return False
+
+    # Custom Categories Methods
+    def add_custom_category(self, category_key: str, emoji: str, name_en: str, name_he: str, created_by: int) -> bool:
+        """Add a new custom category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO custom_categories (category_key, emoji, name_en, name_he, created_by)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (category_key, emoji, name_en, name_he, created_by))
+                conn.commit()
+                return True
+        except sqlite3.IntegrityError:
+            logging.warning(f"Category key '{category_key}' already exists")
+            return False
+        except Exception as e:
+            logging.error(f"Error adding custom category: {e}")
+            return False
+
+    def get_custom_categories(self) -> List[Dict]:
+        """Get all custom categories"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT category_key, emoji, name_en, name_he, created_by, created_at
+                    FROM custom_categories
+                    ORDER BY created_at DESC
+                ''')
+                categories = []
+                for row in cursor.fetchall():
+                    categories.append({
+                        'category_key': row[0],
+                        'emoji': row[1],
+                        'name_en': row[2],
+                        'name_he': row[3],
+                        'created_by': row[4],
+                        'created_at': row[5]
+                    })
+                return categories
+        except Exception as e:
+            logging.error(f"Error getting custom categories: {e}")
+            return []
+
+    def get_custom_category(self, category_key: str) -> Optional[Dict]:
+        """Get a specific custom category by key"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT category_key, emoji, name_en, name_he, created_by, created_at
+                    FROM custom_categories
+                    WHERE category_key = ?
+                ''', (category_key,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'category_key': row[0],
+                        'emoji': row[1],
+                        'name_en': row[2],
+                        'name_he': row[3],
+                        'created_by': row[4],
+                        'created_at': row[5]
+                    }
+                return None
+        except Exception as e:
+            logging.error(f"Error getting custom category: {e}")
+            return None
+
+    def delete_custom_category(self, category_key: str) -> bool:
+        """Delete a custom category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM custom_categories WHERE category_key = ?', (category_key,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error deleting custom category: {e}")
+            return False
+
+    # Category Suggestions Methods
+    def add_category_suggestion(self, suggested_by: int, category_key: str, emoji: str, name_en: str, name_he: str) -> bool:
+        """Add a new category suggestion"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO category_suggestions (suggested_by, category_key, emoji, name_en, name_he)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (suggested_by, category_key, emoji, name_en, name_he))
+                conn.commit()
+                return True
+        except sqlite3.IntegrityError:
+            logging.warning(f"Category suggestion '{category_key}' already exists")
+            return False
+        except Exception as e:
+            logging.error(f"Error adding category suggestion: {e}")
+            return False
+
+    def get_pending_category_suggestions(self) -> List[Dict]:
+        """Get pending category suggestions"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT s.id, s.category_key, s.emoji, s.name_en, s.name_he, s.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM category_suggestions s
+                    JOIN users u ON s.suggested_by = u.user_id
+                    WHERE s.status = 'pending'
+                    ORDER BY s.created_at DESC
+                ''')
+                
+                suggestions = []
+                for row in cursor.fetchall():
+                    suggestions.append({
+                        'id': row[0],
+                        'category_key': row[1],
+                        'emoji': row[2],
+                        'name_en': row[3],
+                        'name_he': row[4],
+                        'created_at': row[5],
+                        'suggested_by_username': row[6],
+                        'suggested_by_first_name': row[7],
+                        'suggested_by_last_name': row[8]
+                    })
+                return suggestions
+        except Exception as e:
+            logging.error(f"Error getting pending category suggestions: {e}")
+            return []
+
+    def approve_category_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
+        """Approve a category suggestion and create the category"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get suggestion details
+                cursor.execute('''
+                    SELECT category_key, emoji, name_en, name_he, suggested_by
+                    FROM category_suggestions
+                    WHERE id = ? AND status = 'pending'
+                ''', (suggestion_id,))
+                
+                suggestion = cursor.fetchone()
+                if not suggestion:
+                    return False
+                
+                category_key, emoji, name_en, name_he, suggested_by = suggestion
+                
+                # Create the category
+                cursor.execute('''
+                    INSERT INTO custom_categories (category_key, emoji, name_en, name_he, created_by)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (category_key, emoji, name_en, name_he, suggested_by))
+                
+                # Update suggestion status
+                cursor.execute('''
+                    UPDATE category_suggestions 
+                    SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (approved_by, suggestion_id))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error approving category suggestion: {e}")
+            return False
+
+    def reject_category_suggestion(self, suggestion_id: int, rejected_by: int) -> bool:
+        """Reject a category suggestion"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE category_suggestions 
+                    SET status = 'rejected', approved_by = ?, approved_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'pending'
+                ''', (rejected_by, suggestion_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error rejecting category suggestion: {e}")
+            return False
+
+    def get_category_suggestion_by_id(self, suggestion_id: int) -> Optional[Dict]:
+        """Get a specific category suggestion by ID"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT s.id, s.category_key, s.emoji, s.name_en, s.name_he, s.status, s.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM category_suggestions s
+                    JOIN users u ON s.suggested_by = u.user_id
+                    WHERE s.id = ?
+                ''', (suggestion_id,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'id': row[0],
+                        'category_key': row[1],
+                        'emoji': row[2],
+                        'name_en': row[3],
+                        'name_he': row[4],
+                        'status': row[5],
+                        'created_at': row[6],
+                        'suggested_by_username': row[7],
+                        'suggested_by_first_name': row[8],
+                        'suggested_by_last_name': row[9]
+                    }
+                return None
+        except Exception as e:
+            logging.error(f"Error getting category suggestion by ID: {e}")
+            return None
