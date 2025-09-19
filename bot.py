@@ -1562,17 +1562,26 @@ class ShoppingBot:
     async def users_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /users command - show user management (admin only)"""
         if not self.db.is_user_authorized(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            if update.message:
+                await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
         if not self.db.is_user_admin(update.effective_user.id):
-            await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            if update.message:
+                await update.message.reply_text(self.get_message(update.effective_user.id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'admin_only'))
             return
 
         users = self.db.get_all_users()
         
         if not users:
-            await update.message.reply_text("👥 No users registered yet.")
+            if update.message:
+                await update.message.reply_text("👥 No users registered yet.")
+            elif update.callback_query:
+                await update.callback_query.edit_message_text("👥 No users registered yet.")
             return
 
         # Build user list message
@@ -1608,7 +1617,14 @@ class ShoppingBot:
         message_parts.append("• `/users` - Show this list")
 
         full_message = "\n".join(message_parts)
-        await update.message.reply_text(full_message, parse_mode='Markdown')
+        
+        # Add back button for callback queries
+        if update.callback_query:
+            keyboard = [[InlineKeyboardButton(self.get_message(update.effective_user.id, 'btn_back_menu'), callback_data="admin_panel")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(full_message, parse_mode='Markdown', reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(full_message, parse_mode='Markdown')
 
     async def authorize_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /authorize command - authorize a user (admin only)"""
