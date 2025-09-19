@@ -374,7 +374,9 @@ For support, contact your family admin.""",
         'btn_no': "❌ No",
         'btn_edit_description': "📝 Edit Description",
         'btn_view_statistics': "📊 View Statistics",
-        'btn_export_list': "📤 Export List"
+        'btn_export_list': "📤 Export List",
+        'supermarket_protected': "🛡️ PROTECTED LIST\n\n❌ The {supermarket_list} cannot be deleted.\n\nThis is the core list of the bot and must always remain active.",
+        'supermarket_core_purpose': "This is the core list of the bot and must always remain active."
     },
     'he': {
         'welcome': "🛒 ברוכים הבאים לבוט רשימת הקניות המשפחתית!\n\nהבוט עוזר לנהל את רשימת הקניות השבועית עם המשפחה.\n\nהשתמש ב-/help כדי לראות את כל הפקודות.",
@@ -612,6 +614,8 @@ For support, contact your family admin.""",
         'btn_no': "❌ לא",
         'btn_edit_description': "📝 ערוך תיאור",
         'btn_view_statistics': "📊 צפה בסטטיסטיקות",
-        'btn_export_list': "📤 ייצא רשימה"
+        'btn_export_list': "📤 ייצא רשימה",
+        'supermarket_protected': "🛡️ רשימה מוגנת\n\n❌ {supermarket_list} לא ניתן למחיקה.\n\nזוהי הרשימה המרכזית של הבוט וחייבת להישאר פעילה תמיד.",
+        'supermarket_core_purpose': "זוהי הרשימה המרכזית של הבוט וחייבת להישאר פעילה תמיד."
     }
 }
