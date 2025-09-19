@@ -2470,8 +2470,7 @@ class ShoppingBot:
     async def notify_admins_new_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                          item_name_en: str, item_name_he: str, category_name: str):
         """Notify admins about new item suggestion"""
-        admins = self.db.get_all_users()
-        admins = [admin for admin in admins if admin['is_admin']]
+        admins = self.db.get_admin_users()
         
         for admin in admins:
             try:
@@ -4159,7 +4158,10 @@ class ShoppingBot:
         user_id = update.effective_user.id
         
         if not self.db.is_user_authorized(user_id):
-            await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'not_registered'))
             return
         
         keyboard = []
@@ -4186,7 +4188,10 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         message = "💡 **Suggest New Item**\n\nSelect a category to suggest a new item:"
         
-        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 
 
@@ -5087,7 +5092,10 @@ class ShoppingBot:
         )]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(message, reply_markup=reply_markup)
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
     
     async def process_suggest_category_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_name: str):
         """Process category name input for suggestion"""
