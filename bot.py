@@ -137,8 +137,11 @@ class ShoppingBot:
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
         
-        # Message handler for custom item addition
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        # Test handler for ALL messages to see what's being received
+        self.application.add_handler(MessageHandler(filters.ALL, self.test_all_messages))
+        
+        # Specific voice handler as backup
+        self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_direct))
 
     async def setup_bot_commands(self):
         """Set up bot commands menu for Telegram command suggestions"""
@@ -370,7 +373,13 @@ class ShoppingBot:
         user_id = update.effective_user.id
         keyboard = []
         
-        # Add RECENTLY category first (if there are recent items)
+        # Add SEARCH button first for easy access
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_search'), 
+            callback_data="search"
+        )])
+        
+        # Add RECENTLY category second (if there are recent items)
         recent_items = self.db.get_recently_used_items()
         if recent_items:
             keyboard.append([InlineKeyboardButton(
@@ -439,7 +448,7 @@ class ShoppingBot:
         
         # Add "ADD NEW ITEM" button if no items exist or always show it
         keyboard.append([InlineKeyboardButton(
-            "➕ ADD NEW ITEM",
+            self.get_message(user_id, 'btn_add_new_item'),
             callback_data=f"add_new_item_{category_key}"
         )])
 
@@ -468,7 +477,7 @@ class ShoppingBot:
         
         # Custom categories don't have predefined items, so just show the "ADD NEW ITEM" button
         keyboard.append([InlineKeyboardButton(
-            "➕ ADD NEW ITEM",
+            self.get_message(user_id, 'btn_add_new_item'),
             callback_data=f"add_new_item_{category_key}"
         )])
 
@@ -672,16 +681,179 @@ class ShoppingBot:
             parse_mode='Markdown'
         )
 
+    async def test_all_messages(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Test handler to see ALL messages"""
+        logging.info(f"TEST ALL - Message ID: {update.message.message_id}")
+        logging.info(f"TEST ALL - Content Type: {update.message.content_type if hasattr(update.message, 'content_type') else 'unknown'}")
+        logging.info(f"TEST ALL - Voice: {update.message.voice}")
+        logging.info(f"TEST ALL - Audio: {update.message.audio}")
+        logging.info(f"TEST ALL - Text: {update.message.text}")
+        logging.info(f"TEST ALL - User ID: {update.effective_user.id}")
+        
+        # If it's a voice message, process it for voice search
+        if update.message.voice:
+            logging.info("🎤 VOICE MESSAGE DETECTED!")
+            if context.user_data.get('waiting_for_voice_search'):
+                logging.info("🎤 Processing voice search...")
+                await self.process_voice_search(update, context)
+            else:
+                logging.info("🎤 Voice message but not waiting for voice search")
+                await update.message.reply_text("🎤 Voice message received, but I'm not expecting voice input right now.")
+            return
+        
+        # Test for any media messages
+        if update.message.audio:
+            logging.info("🎵 AUDIO MESSAGE DETECTED!")
+            await update.message.reply_text("🎵 Audio message received!")
+            return
+            
+        if update.message.document:
+            logging.info("📄 DOCUMENT MESSAGE DETECTED!")
+            await update.message.reply_text("📄 Document message received!")
+            return
+            
+        if update.message.photo:
+            logging.info("📷 PHOTO MESSAGE DETECTED!")
+            await update.message.reply_text("📷 Photo message received!")
+            return
+        
+        # Handle text messages normally
+        if update.message.text:
+            # Check if waiting for voice text input
+            if context.user_data.get('waiting_for_voice_text'):
+                # Check if it's a menu button command first
+                if update.message.text in ["🛒 Supermarket", "🛒 סופר"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.supermarket_list_command(update, context)
+                    return
+                elif update.message.text in ["➕ New List", "➕ רשימה חדשה"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.new_list_command(update, context)
+                    return
+                elif update.message.text in ["📋 My Lists", "📋 הרשימות שלי"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.my_lists_command(update, context)
+                    return
+                elif update.message.text in ["🔍🎤 Search", "🔍🎤 חיפוש"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.search_command(update, context)
+                    return
+                elif update.message.text in ["📦 My Items", "📦 הפריטים שלי"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.my_items_command(update, context)
+                    return
+                elif update.message.text in ["⚙️ Management", "⚙️ ניהול"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.admin_management_command(update, context)
+                    return
+                elif update.message.text in ["👑 Admin", "👑 מנהל"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.admin_command(update, context)
+                    return
+                elif update.message.text in ["📢 Broadcast", "📢 שידור"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.broadcast_command(update, context)
+                    return
+                elif update.message.text in ["🌐 Language", "🌐 שפה"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.language_command(update, context)
+                    return
+                elif update.message.text in ["🏠 Main Menu", "🏠 תפריט ראשי"]:
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.main_menu_command(update, context)
+                    return
+                else:
+                    # Process as voice text input
+                    logging.info(f"Voice text input received: {update.message.text}")
+                    context.user_data.pop('waiting_for_voice_text', None)
+                    await self.process_search(update, context, update.message.text)
+                    return
+            
+            # Check if it's a button command
+            if update.message.text in ["🛒 Supermarket", "🛒 סופר"]:
+                await self.supermarket_list_command(update, context)
+                return
+            elif update.message.text in ["➕ New List", "➕ רשימה חדשה"]:
+                await self.new_list_command(update, context)
+                return
+            elif update.message.text in ["📋 My Lists", "📋 הרשימות שלי"]:
+                await self.my_lists_command(update, context)
+                return
+            elif update.message.text in ["🔍🎤 Search", "🔍🎤 חיפוש"]:
+                await self.search_command(update, context)
+                return
+            elif update.message.text in ["📦 My Items", "📦 הפריטים שלי"]:
+                await self.my_items_command(update, context)
+                return
+            elif update.message.text in ["⚙️ Management", "⚙️ ניהול"]:
+                await self.admin_management_command(update, context)
+                return
+            elif update.message.text in ["👑 Admin", "👑 מנהל"]:
+                await self.admin_command(update, context)
+                return
+            elif update.message.text in ["📢 Broadcast", "📢 שידור"]:
+                await self.broadcast_command(update, context)
+                return
+            elif update.message.text in ["🌐 Language", "🌐 שפה"]:
+                await self.language_command(update, context)
+                return
+            elif update.message.text in ["🏠 Main Menu", "🏠 תפריט ראשי"]:
+                await self.main_menu_command(update, context)
+                return
+        
+        # Don't process other messages
+        return
+
+    async def handle_voice_direct(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Direct voice handler as backup"""
+        logging.info("DIRECT VOICE HANDLER - Voice message received!")
+        logging.info(f"DIRECT VOICE HANDLER - Voice: {update.message.voice}")
+        logging.info(f"DIRECT VOICE HANDLER - User ID: {update.effective_user.id}")
+        
+        await update.message.reply_text("🎤 DIRECT VOICE HANDLER - Voice message received!")
+        
+        if context.user_data.get('waiting_for_voice_search'):
+            logging.info("DIRECT VOICE HANDLER - Processing voice search...")
+            await self.process_voice_search(update, context)
+        else:
+            logging.info("DIRECT VOICE HANDLER - Voice message but not waiting for voice search")
+
+    async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle voice messages specifically"""
+        logging.info(f"VOICE MESSAGE HANDLER - Message ID: {update.message.message_id}")
+        logging.info(f"VOICE MESSAGE HANDLER - Voice: {update.message.voice}")
+        logging.info(f"VOICE MESSAGE HANDLER - User ID: {update.effective_user.id}")
+        logging.info(f"VOICE MESSAGE HANDLER - waiting_for_voice_search: {context.user_data.get('waiting_for_voice_search')}")
+        
+        if context.user_data.get('waiting_for_voice_search'):
+            logging.info("VOICE MESSAGE HANDLER - Processing voice search...")
+            await self.process_voice_search(update, context)
+        else:
+            logging.info("VOICE MESSAGE HANDLER - Voice message but not waiting for voice search")
+            await update.message.reply_text("🎤 Voice message received, but I'm not expecting voice input right now.")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle text messages and voice messages"""
         if not self.db.is_user_authorized(update.effective_user.id):
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Debug: Log all message types
+        logging.info(f"Message received - Type: {type(update.message)}, Content: {update.message.content_type if hasattr(update.message, 'content_type') else 'unknown'}")
+        logging.info(f"Voice: {update.message.voice}, Audio: {update.message.audio}, Text: {update.message.text}")
+        logging.info(f"Message ID: {update.message.message_id}, User ID: {update.effective_user.id}")
+        logging.info(f"All message attributes: {[attr for attr in dir(update.message) if not attr.startswith('_')]}")
+        
         # Handle voice messages for voice search
-        if update.message.voice and context.user_data.get('waiting_for_voice_search'):
-            await self.process_voice_search(update, context)
-            return
+        if update.message.voice:
+            logging.info(f"Voice message received. waiting_for_voice_search: {context.user_data.get('waiting_for_voice_search')}")
+            if context.user_data.get('waiting_for_voice_search'):
+                await self.process_voice_search(update, context)
+                return
+            else:
+                logging.info("Voice message received but not waiting for voice search")
+                await update.message.reply_text("🎤 Voice message received, but I'm not expecting voice input right now.")
+                return
 
         text = update.message.text.strip()
         user_id = update.effective_user.id
@@ -1131,7 +1303,7 @@ class ShoppingBot:
 
         # Build clean summary
         summary_parts = [
-            "📊 SHOPPING SUMMARY REPORT",
+            self.get_message(user_id, 'shopping_summary_report'),
             f"📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             f"📋 Total Items: {len(items)}",
             "─" * 30
@@ -1191,7 +1363,7 @@ class ShoppingBot:
                 await update.message.reply_text(full_summary)
             elif update.callback_query:
                 # Add back button for callback queries
-                keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data="list_menu_1")]]
+                keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data="list_menu_1")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.callback_query.edit_message_text(full_summary, reply_markup=reply_markup)
 
@@ -1266,7 +1438,7 @@ class ShoppingBot:
         
         # Add back button if called from callback
         if update.callback_query:
-            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data="list_menu_1")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data="list_menu_1")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(full_message, reply_markup=reply_markup)
         else:
@@ -1331,6 +1503,11 @@ class ShoppingBot:
             # Clear waiting states when going back to categories
             self.clear_all_waiting_states(context)
             await self.show_categories(update, context)
+        
+        elif data == "search":
+            # Clear waiting states when starting search
+            self.clear_all_waiting_states(context)
+            await self.search_command(update, context)
         
         # Category creation callbacks
         elif data == "cancel_category_creation":
@@ -1520,7 +1697,11 @@ class ShoppingBot:
         
         elif data == "voice_search":
             # Handle voice search option
-            await self.show_voice_search_prompt(update, context)
+            try:
+                await self.show_voice_search_prompt(update, context)
+            except Exception as e:
+                logging.error(f"Error in voice search: {e}")
+                await update.callback_query.edit_message_text("❌ Error opening voice search. Please try again.")
         
         elif data.startswith("text_search_list_"):
             # Handle text search for specific list
@@ -1722,11 +1903,11 @@ class ShoppingBot:
                 import urllib.parse
                 keyboard = [
                     [InlineKeyboardButton(
-                        "✅ ADD TO THE LIST",
+                        self.get_message(user_id, 'btn_add_to_the_list'),
                         callback_data=f"search_add_list_{list_id}_{category_key}_{urllib.parse.quote(item_name)}"
                     )],
                     [InlineKeyboardButton(
-                        "🏠 Back to List",
+                        self.get_message(user_id, 'btn_back_to_list'),
                         callback_data=f"list_menu_{list_id}"
                     )]
                 ]
@@ -1767,7 +1948,7 @@ class ShoppingBot:
                 import urllib.parse
                 keyboard = [
                     [InlineKeyboardButton(
-                        "✅ ADD TO THE LIST",
+                        self.get_message(user_id, 'btn_add_to_the_list'),
                         callback_data=f"search_add_{category_key}_{urllib.parse.quote(item_name)}"
                     )],
                     [InlineKeyboardButton(
@@ -2090,7 +2271,7 @@ class ShoppingBot:
                 InlineKeyboardButton(self.get_message(user_id, 'btn_notes'), callback_data="add_note")
             ],
             [
-                InlineKeyboardButton(self.get_message(user_id, 'btn_back_categories'), callback_data=f"category_{category_key}")
+                InlineKeyboardButton(self.get_message(user_id, 'btn_back_categories'), callback_data="categories")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2807,7 +2988,7 @@ class ShoppingBot:
         
         if not item_suggestions and not category_suggestions:
             message += "📝 No pending suggestions."
-            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         else:
             message += f"📊 **Pending Suggestions:**\n"
             if item_suggestions:
@@ -2820,7 +3001,7 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton("📦 Manage Item Suggestions", callback_data=f"manage_item_suggestions_{list_id}")])
             if category_suggestions:
                 keyboard.append([InlineKeyboardButton("📂 Manage Category Suggestions", callback_data="manage_category_suggestions")])
-            keyboard.append([InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")])
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -2884,7 +3065,7 @@ class ShoppingBot:
             )])
         
         keyboard.append([InlineKeyboardButton(
-            "🏠 Back to List",
+            self.get_message(user_id, 'btn_back_to_list'),
             callback_data=f"list_menu_{list_id}"
         )])
         
@@ -3089,8 +3270,8 @@ class ShoppingBot:
         
         # Create keyboard with text and voice search options
         keyboard = [
-            [InlineKeyboardButton("✏️ Text Search", callback_data="text_search")],
-            [InlineKeyboardButton("🎤 Voice Search", callback_data="voice_search")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_text_search'), callback_data="text_search")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_voice_search'), callback_data="voice_search")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -3102,40 +3283,38 @@ class ShoppingBot:
 
     async def show_voice_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show voice search prompt"""
-        user_id = update.effective_user.id
-        
-        # Create keyboard with voice recording option
-        keyboard = [
-            [InlineKeyboardButton("🎤 Start Voice Recording", callback_data="start_voice_recording")],
-            [InlineKeyboardButton("✏️ Switch to Text Search", callback_data="text_search")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        prompt_text = self.get_message(user_id, 'voice_search_prompt')
-        await update.callback_query.edit_message_text(
-            prompt_text,
-            reply_markup=reply_markup
-        )
+        try:
+            user_id = update.effective_user.id
+            
+            # Create keyboard with voice recording option
+            keyboard = [
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_start_voice_recording'), callback_data="start_voice_recording")],
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_switch_to_text_search'), callback_data="text_search")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            prompt_text = self.get_message(user_id, 'voice_search_prompt')
+            await update.callback_query.edit_message_text(
+                prompt_text,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logging.error(f"Error in show_voice_search_prompt: {e}")
+            await update.callback_query.edit_message_text("❌ Error loading voice search. Please try again.")
 
     async def start_voice_recording(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start voice recording for search"""
         user_id = update.effective_user.id
         
-        # Create keyboard to stop recording
-        keyboard = [
-            [InlineKeyboardButton("⏹️ Stop Recording", callback_data="stop_voice_recording")],
-            [InlineKeyboardButton("✏️ Switch to Text Search", callback_data="text_search")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
+        # Show listening message without stop button (automatic stop when releasing microphone)
         prompt_text = self.get_message(user_id, 'voice_search_listening')
         await update.callback_query.edit_message_text(
-            prompt_text,
-            reply_markup=reply_markup
+            prompt_text
         )
         
         # Set waiting for voice message
         context.user_data['waiting_for_voice_search'] = True
+        logging.info("Voice recording started, waiting_for_voice_search set to True")
 
     async def process_voice_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Process voice message for search"""
@@ -3152,6 +3331,7 @@ class ShoppingBot:
             
             # Get the voice file
             voice_file = await context.bot.get_file(update.message.voice.file_id)
+            logging.info(f"Voice file downloaded: {voice_file.file_id}")
             
             if SPEECH_RECOGNITION_AVAILABLE:
                 # Try to transcribe the voice
@@ -3165,8 +3345,11 @@ class ShoppingBot:
                     await self.process_search(update, context, transcribed_text)
                 else:
                     await processing_msg.edit_text(
-                        self.get_message(user_id, 'voice_search_error')
+                        "🎤 Voice recognition failed!\n\n"
+                        "Please type what you said so I can search for it:\n\n"
+                        "💡 Example: 'milk', 'חלב', 'bread', 'לחם'"
                     )
+                    context.user_data['waiting_for_voice_text'] = True
             else:
                 # Speech recognition not available
                 await processing_msg.edit_text(
@@ -3177,6 +3360,7 @@ class ShoppingBot:
                 context.user_data['waiting_for_voice_text'] = True
             
         except Exception as e:
+            logging.error(f"Voice search processing error: {e}")
             await update.message.reply_text(
                 self.get_message(user_id, 'voice_search_error')
             )
@@ -3186,18 +3370,92 @@ class ShoppingBot:
         try:
             # Download voice file
             voice_data = await voice_file.download_as_bytearray()
+            logging.info(f"Voice data downloaded: {len(voice_data)} bytes")
             
             # Initialize speech recognizer
             recognizer = sr.Recognizer()
             
-            # Convert bytearray to audio file
-            audio_io = io.BytesIO(voice_data)
-            
-            # Use speech recognition
-            with sr.AudioFile(audio_io) as source:
-                audio = recognizer.record(source)
-                text = recognizer.recognize_google(audio, language='en-US')
-                return text
+            # Try direct recognition first (sometimes works with OGG)
+            try:
+                audio_io = io.BytesIO(voice_data)
+                with sr.AudioFile(audio_io) as source:
+                    audio = recognizer.record(source)
+                    
+                    # Try English first
+                    try:
+                        text = recognizer.recognize_google(audio, language='en-US')
+                        logging.info(f"Voice transcribed (English): {text}")
+                        return text
+                    except sr.UnknownValueError:
+                        # Try Hebrew if English fails
+                        try:
+                            text = recognizer.recognize_google(audio, language='he-IL')
+                            logging.info(f"Voice transcribed (Hebrew): {text}")
+                            return text
+                        except sr.UnknownValueError:
+                            # Try auto-detect
+                            try:
+                                text = recognizer.recognize_google(audio)
+                                logging.info(f"Voice transcribed (auto-detect): {text}")
+                                return text
+                            except sr.UnknownValueError:
+                                logging.error("Could not understand voice message")
+                                return None
+                                
+            except Exception as e:
+                logging.info(f"Direct recognition failed: {e}")
+                
+                # Try with pydub conversion as fallback
+                try:
+                    from pydub import AudioSegment
+                    import os
+                    
+                    # Add FFmpeg to PATH if not found
+                    ffmpeg_path = r"C:\Users\arono\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-full_build\bin"
+                    if ffmpeg_path not in os.environ.get('PATH', ''):
+                        os.environ['PATH'] = ffmpeg_path + os.pathsep + os.environ.get('PATH', '')
+                    
+                    # Convert bytearray to AudioSegment
+                    audio_segment = AudioSegment.from_ogg(io.BytesIO(voice_data))
+                    
+                    # Convert to WAV format
+                    wav_data = io.BytesIO()
+                    audio_segment.export(wav_data, format="wav")
+                    wav_data.seek(0)
+                    
+                    logging.info("Audio converted from OGG to WAV format")
+                    
+                    # Use speech recognition with WAV data
+                    with sr.AudioFile(wav_data) as source:
+                        audio = recognizer.record(source)
+                        
+                        # Try English first
+                        try:
+                            text = recognizer.recognize_google(audio, language='en-US')
+                            logging.info(f"Voice transcribed (English): {text}")
+                            return text
+                        except sr.UnknownValueError:
+                            # Try Hebrew if English fails
+                            try:
+                                text = recognizer.recognize_google(audio, language='he-IL')
+                                logging.info(f"Voice transcribed (Hebrew): {text}")
+                                return text
+                            except sr.UnknownValueError:
+                                # Try auto-detect
+                                try:
+                                    text = recognizer.recognize_google(audio)
+                                    logging.info(f"Voice transcribed (auto-detect): {text}")
+                                    return text
+                                except sr.UnknownValueError:
+                                    logging.error("Could not understand voice message")
+                                    return None
+                                    
+                except ImportError:
+                    logging.error("pydub library not available for audio conversion")
+                    return None
+                except Exception as e:
+                    logging.error(f"Audio conversion error: {e}")
+                    return None
                 
         except Exception as e:
             logging.error(f"Voice transcription error: {e}")
@@ -3433,11 +3691,11 @@ class ShoppingBot:
                 # For list-specific search, add to that specific list
                 keyboard = [
                     [InlineKeyboardButton(
-                        "✅ ADD TO THE LIST",
+                        self.get_message(user_id, 'btn_add_to_the_list'),
                         callback_data=f"search_add_list_{list_id}_{result['category_key']}_{urllib.parse.quote(result['item_name'])}"
                     )],
                     [InlineKeyboardButton(
-                        "🏠 Back to List",
+                        self.get_message(user_id, 'btn_back_to_list'),
                         callback_data=f"list_menu_{list_id}"
                     )]
                 ]
@@ -3445,7 +3703,7 @@ class ShoppingBot:
                 # For general search, use the old method
                 keyboard = [
                     [InlineKeyboardButton(
-                        "✅ ADD TO THE LIST",
+                        self.get_message(user_id, 'btn_add_to_the_list'),
                         callback_data=f"search_add_{result['category_key']}_{urllib.parse.quote(result['item_name'])}"
                     )],
                     [InlineKeyboardButton(
@@ -3486,7 +3744,7 @@ class ShoppingBot:
             list_id = results[0].get('list_id') if results else None
             if list_id:
                 keyboard.append([InlineKeyboardButton(
-                    "🏠 Back to List",
+                    self.get_message(user_id, 'btn_back_to_list'),
                     callback_data=f"list_menu_{list_id}"
                 )])
             else:
@@ -3518,7 +3776,7 @@ class ShoppingBot:
             )])
         else:
             keyboard.append([InlineKeyboardButton(
-                "➕ ADD NEW ITEM",
+                self.get_message(user_id, 'btn_add_new_item'),
                 callback_data="new_item_direct"
             )])
         
@@ -3801,7 +4059,13 @@ class ShoppingBot:
         
         keyboard = []
         
-        # Add RECENTLY category first (if there are recent items)
+        # Add SEARCH button first for easy access
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_search'), 
+            callback_data=f"search_list_{list_id}"
+        )])
+        
+        # Add RECENTLY category second (if there are recent items)
         recent_items = self.db.get_recently_used_items()
         if recent_items:
             keyboard.append([InlineKeyboardButton(
@@ -3996,7 +4260,7 @@ class ShoppingBot:
                 user_name = user_info.get('first_name') or user_info.get('username') or self.get_message(update.effective_user.id, 'user_fallback').format(user_id=user_id_val)
                 stats_message += f"• {user_name}: {count}\n"
         
-        keyboard = [[InlineKeyboardButton("🏠 Back to List Actions", callback_data=f"list_actions_{list_id}")]]
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list_actions'), callback_data=f"list_actions_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(stats_message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -4016,7 +4280,7 @@ class ShoppingBot:
         if not items:
             message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove from the list."
             
-            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             return
@@ -4049,7 +4313,7 @@ class ShoppingBot:
         )])
         
         # Add back button
-        keyboard.append([InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -4106,7 +4370,7 @@ class ShoppingBot:
         
         if not items:
             message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove."
-            keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             return
@@ -4175,7 +4439,7 @@ class ShoppingBot:
                 logging.error(f"Error sending removal notification to user {auth_user['user_id']}: {e}")
         
         success_message = f"✅ Successfully removed {removed_count} items from {category_name} category."
-        keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
@@ -4480,7 +4744,7 @@ class ShoppingBot:
                     message += "\n"
                 message += "\n"
         
-        keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -4499,9 +4763,9 @@ class ShoppingBot:
         
         # Create keyboard with text and voice search options
         keyboard = [
-            [InlineKeyboardButton("✏️ Text Search", callback_data=f"text_search_list_{list_id}")],
-            [InlineKeyboardButton("🎤 Voice Search", callback_data=f"voice_search_list_{list_id}")],
-            [InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_text_search'), callback_data=f"text_search_list_{list_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_voice_search'), callback_data=f"voice_search_list_{list_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
