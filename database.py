@@ -1492,6 +1492,21 @@ class Database:
             logging.error(f"Error checking if item is deleted: {e}")
             return False
 
+    def restore_deleted_item(self, category_key: str, item_name: str) -> bool:
+        """Restore a previously deleted item by removing it from deleted_items table"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM deleted_items 
+                    WHERE category_key = ? AND item_name = ?
+                ''', (category_key, item_name))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error restoring deleted item: {e}")
+            return False
+
     # Dynamic Category Items Methods
     def add_dynamic_category_item(self, category_key: str, item_name_en: str, item_name_he: str = None, added_by: int = None) -> bool:
         """Add a new item to a category dynamically"""
