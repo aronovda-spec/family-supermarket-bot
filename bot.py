@@ -1,6 +1,8 @@
 import logging
 import asyncio
 import sqlite3
+import io
+import os
 from datetime import datetime
 from typing import Dict, List
 
@@ -9,6 +11,13 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 from config import BOT_TOKEN, ADMIN_IDS, CATEGORIES, MESSAGES, LANGUAGES
 from database import Database
+
+# Try to import speech recognition for voice search
+try:
+    import speech_recognition as sr
+    SPEECH_RECOGNITION_AVAILABLE = True
+except ImportError:
+    SPEECH_RECOGNITION_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -664,13 +673,24 @@ class ShoppingBot:
         )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle text messages"""
+        """Handle text messages and voice messages"""
         if not self.db.is_user_authorized(update.effective_user.id):
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Handle voice messages for voice search
+        if update.message.voice and context.user_data.get('waiting_for_voice_search'):
+            await self.process_voice_search(update, context)
+            return
+
         text = update.message.text.strip()
         user_id = update.effective_user.id
+        
+        # Handle voice search text input
+        if context.user_data.get('waiting_for_voice_text'):
+            context.user_data.pop('waiting_for_voice_text', None)
+            await self.process_search(update, context, text)
+            return
         
         # Handle category creation text input
         if context.user_data.get('creating_category'):
@@ -752,7 +772,7 @@ class ShoppingBot:
             await self.new_item_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_search') or 
-              text == "🔍 Search" or text == "🔍 חיפוש"):
+              text == "🔍🎤 Search" or text == "🔍🎤 חיפוש"):
             await self.search_command(update, context)
             return
         elif text == self.get_message(user_id, 'btn_help'):
@@ -1488,6 +1508,26 @@ class ShoppingBot:
         elif data == "search_again":
             # Handle "Search Again" button
             await self.show_search_prompt(update, context)
+        
+        elif data == "text_search":
+            # Handle text search option
+            context.user_data['waiting_for_search'] = True
+            user_id = update.effective_user.id
+            prompt_text = self.get_message(user_id, 'search_prompt')
+            await update.callback_query.edit_message_text(prompt_text)
+        
+        elif data == "voice_search":
+            # Handle voice search option
+            await self.show_voice_search_prompt(update, context)
+        
+        elif data == "start_voice_recording":
+            # Handle voice recording start
+            await self.start_voice_recording(update, context)
+        
+        elif data == "stop_voice_recording":
+            # Handle stop voice recording
+            context.user_data.pop('waiting_for_voice_search', None)
+            await self.show_voice_search_prompt(update, context)
         
         elif data.startswith("add_to_list_"):
             # Handle "Add to Current List" button
@@ -3016,12 +3056,124 @@ class ShoppingBot:
         await self.show_search_prompt(update, context)
 
     async def show_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show search prompt"""
+        """Show search prompt with text and voice options"""
         user_id = update.effective_user.id
-        context.user_data['waiting_for_search'] = True
+        
+        # Create keyboard with text and voice search options
+        keyboard = [
+            [InlineKeyboardButton("✏️ Text Search", callback_data="text_search")],
+            [InlineKeyboardButton("🎤 Voice Search", callback_data="voice_search")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
         prompt_text = self.get_message(user_id, 'search_prompt')
-        await update.message.reply_text(prompt_text)
+        await update.message.reply_text(
+            f"{prompt_text}\n\nChoose search method:",
+            reply_markup=reply_markup
+        )
+
+    async def show_voice_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show voice search prompt"""
+        user_id = update.effective_user.id
+        
+        # Create keyboard with voice recording option
+        keyboard = [
+            [InlineKeyboardButton("🎤 Start Voice Recording", callback_data="start_voice_recording")],
+            [InlineKeyboardButton("✏️ Switch to Text Search", callback_data="text_search")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        prompt_text = self.get_message(user_id, 'voice_search_prompt')
+        await update.callback_query.edit_message_text(
+            prompt_text,
+            reply_markup=reply_markup
+        )
+
+    async def start_voice_recording(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start voice recording for search"""
+        user_id = update.effective_user.id
+        
+        # Create keyboard to stop recording
+        keyboard = [
+            [InlineKeyboardButton("⏹️ Stop Recording", callback_data="stop_voice_recording")],
+            [InlineKeyboardButton("✏️ Switch to Text Search", callback_data="text_search")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        prompt_text = self.get_message(user_id, 'voice_search_listening')
+        await update.callback_query.edit_message_text(
+            prompt_text,
+            reply_markup=reply_markup
+        )
+        
+        # Set waiting for voice message
+        context.user_data['waiting_for_voice_search'] = True
+
+    async def process_voice_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Process voice message for search"""
+        user_id = update.effective_user.id
+        
+        # Clear voice search waiting state
+        context.user_data.pop('waiting_for_voice_search', None)
+        
+        try:
+            # Show processing message
+            processing_msg = await update.message.reply_text(
+                self.get_message(user_id, 'voice_search_processing')
+            )
+            
+            # Get the voice file
+            voice_file = await context.bot.get_file(update.message.voice.file_id)
+            
+            if SPEECH_RECOGNITION_AVAILABLE:
+                # Try to transcribe the voice
+                transcribed_text = await self.transcribe_voice(voice_file)
+                
+                if transcribed_text:
+                    await processing_msg.edit_text(
+                        f"🎤 Voice transcribed: **{transcribed_text}**\n\nSearching..."
+                    )
+                    # Process the search with transcribed text
+                    await self.process_search(update, context, transcribed_text)
+                else:
+                    await processing_msg.edit_text(
+                        self.get_message(user_id, 'voice_search_error')
+                    )
+            else:
+                # Speech recognition not available
+                await processing_msg.edit_text(
+                    "🎤 Voice received!\n\n"
+                    "⚠️ Voice-to-text requires additional setup.\n"
+                    "Please type what you said:"
+                )
+                context.user_data['waiting_for_voice_text'] = True
+            
+        except Exception as e:
+            await update.message.reply_text(
+                self.get_message(user_id, 'voice_search_error')
+            )
+
+    async def transcribe_voice(self, voice_file) -> str:
+        """Transcribe voice file to text"""
+        try:
+            # Download voice file
+            voice_data = await voice_file.download_as_bytearray()
+            
+            # Initialize speech recognizer
+            recognizer = sr.Recognizer()
+            
+            # Convert bytearray to audio file
+            audio_io = io.BytesIO(voice_data)
+            
+            # Use speech recognition
+            with sr.AudioFile(audio_io) as source:
+                audio = recognizer.record(source)
+                text = recognizer.recognize_google(audio, language='en-US')
+                return text
+                
+        except Exception as e:
+            logging.error(f"Voice transcription error: {e}")
+            return None
 
     async def process_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, search_query: str):
         """Process search query"""
