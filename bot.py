@@ -860,11 +860,18 @@ class ShoppingBot:
             note_text = f"\n📝 Note: {note}" if note else ""
             success_message = self.get_message(user_id, 'item_added', item=item_info['name'], note=note_text)
             
+            # Create keyboard with BACK TO CATEGORIES button for quick continuation
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_categories'), 
+                callback_data=f"category_{item_info['category']}"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             # Check if it's from callback query (Add button) or text message (typed note)
             if update.callback_query:
-                await update.callback_query.edit_message_text(success_message)
+                await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
             else:
-                await update.message.reply_text(success_message)
+                await update.message.reply_text(success_message, reply_markup=reply_markup)
             
             # Notify other users
             await self.notify_users_item_added(update, context, item_info['name'], note)
@@ -1846,7 +1853,7 @@ class ShoppingBot:
                 InlineKeyboardButton(self.get_message(user_id, 'btn_notes'), callback_data="add_note")
             ],
             [
-                InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{target_list_id or 1}")
+                InlineKeyboardButton(self.get_message(user_id, 'btn_back_categories'), callback_data=f"category_{category_key}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
