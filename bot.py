@@ -941,9 +941,15 @@ class ShoppingBot:
             success_message = self.get_message(user_id, 'item_added', item=item_info['name'], note=note_text)
             
             # Create keyboard with BACK TO CATEGORIES button for quick continuation
+            # If category is 'custom' (from search), go to main categories menu
+            if item_info['category'] == 'custom':
+                callback_data = "categories"
+            else:
+                callback_data = f"category_{item_info['category']}"
+            
             keyboard = [[InlineKeyboardButton(
                 self.get_message(user_id, 'btn_back_categories'), 
-                callback_data=f"category_{item_info['category']}"
+                callback_data=callback_data
             )]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
