@@ -328,6 +328,14 @@ class ShoppingBot:
         user_id = update.effective_user.id
         keyboard = []
         
+        # Add RECENTLY category first (if there are recent items)
+        recent_items = self.db.get_recently_used_items()
+        if recent_items:
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'recently_category'), 
+                callback_data="category_recently"
+            )])
+        
         # Add predefined categories
         for category_key, category_data in CATEGORIES.items():
             category_name = self.get_category_name(user_id, category_key)
@@ -430,6 +438,41 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         category_name = self.get_category_name(user_id, category_key)
         text = f"{custom_category['emoji']} {category_name}\n\nThis is a custom category. Tap ➕ to add new items:"
+        
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+
+    async def show_recently_used_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show recently used items (past 7 days)"""
+        user_id = update.effective_user.id
+        recent_items = self.db.get_recently_used_items()
+        
+        if not recent_items:
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_categories'), 
+                callback_data="categories"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            text = f"{self.get_message(user_id, 'recently_category')}\n\nNo items used in the past 7 days."
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+            return
+        
+        keyboard = []
+        
+        # Add recent items with usage count
+        for item in recent_items:
+            usage_text = f" ({item['usage_count']}x)" if item['usage_count'] > 1 else ""
+            keyboard.append([InlineKeyboardButton(
+                f"✅ {item['name']}{usage_text}", 
+                callback_data=f"add_item_recently_{item['name']}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(
+            self.get_message(user_id, 'btn_back_categories'), 
+            callback_data="categories"
+        )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        text = f"{self.get_message(user_id, 'recently_category')}\n\n{self.get_message(user_id, 'recently_items_title')}"
         
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
@@ -1294,12 +1337,30 @@ class ShoppingBot:
         
         elif data.startswith("category_"):
             category_key = data.replace("category_", "")
-            await self.show_category_items(update, context, category_key)
+            if category_key == "recently":
+                await self.show_recently_used_items(update, context)
+            else:
+                await self.show_category_items(update, context, category_key)
         
         elif data.startswith("add_item_"):
             # Parse: add_item_categorykey_itemname
             # We need to be careful with category keys that contain underscores
             remaining = data.replace("add_item_", "")
+            
+            # Check for recently used items first
+            if remaining.startswith("recently_"):
+                item_name = remaining[9:]  # Remove "recently_" prefix
+                # Get the original category for this item
+                recent_items = self.db.get_recently_used_items()
+                category_key = None
+                for item in recent_items:
+                    if item['name'] == item_name:
+                        category_key = item['category']
+                        break
+                
+                if category_key:
+                    await self.process_category_item_selection(update, context, category_key, item_name)
+                return
             
             # Find the category key by checking against known categories
             category_key = None
@@ -2867,6 +2928,7 @@ class ShoppingBot:
         results = []
         query_lower = query.lower()
         
+        # Search in predefined categories
         for category_key, category_data in CATEGORIES.items():
             category_name = self.get_category_name(user_id, category_key)
             
@@ -2892,6 +2954,43 @@ class ShoppingBot:
                         'category': category_name,
                         'category_key': category_key,
                         'category_emoji': category_data['emoji']
+                    })
+            
+            # Search in dynamic items for this category
+            dynamic_items = self.db.get_dynamic_category_items(category_key)
+            for item in dynamic_items:
+                lang = self.get_user_language(user_id)
+                item_name = item.get(lang, item.get('en', ''))
+                if item_name and query_lower in item_name.lower():
+                    # Get both English and Hebrew names
+                    item_en = item.get('en', item_name)
+                    item_he = item.get('he', item_name)
+                    results.append({
+                        'item_name': item_en,
+                        'hebrew_name': item_he,
+                        'category': category_name,
+                        'category_key': category_key,
+                        'category_emoji': category_data['emoji']
+                    })
+        
+        # Search in custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            # Custom categories don't have predefined items, but they might have dynamic items
+            dynamic_items = self.db.get_dynamic_category_items(category['category_key'])
+            for item in dynamic_items:
+                lang = self.get_user_language(user_id)
+                item_name = item.get(lang, item.get('en', ''))
+                if item_name and query_lower in item_name.lower():
+                    item_en = item.get('en', item_name)
+                    item_he = item.get('he', item_name)
+                    results.append({
+                        'item_name': item_en,
+                        'hebrew_name': item_he,
+                        'category': category_name,
+                        'category_key': category['category_key'],
+                        'category_emoji': category['emoji']
                     })
         
         # Remove duplicates
@@ -3312,6 +3411,14 @@ class ShoppingBot:
         context.user_data['target_list_id'] = list_id
         
         keyboard = []
+        
+        # Add RECENTLY category first (if there are recent items)
+        recent_items = self.db.get_recently_used_items()
+        if recent_items:
+            keyboard.append([InlineKeyboardButton(
+                self.get_message(user_id, 'recently_category'), 
+                callback_data="category_recently"
+            )])
         
         # Add predefined categories
         for category_key, category_data in CATEGORIES.items():
