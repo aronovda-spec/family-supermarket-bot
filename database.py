@@ -1340,6 +1340,26 @@ class Database:
             logging.error(f"Error getting total pending suggestions count: {e}")
             return 0
 
+    def get_recently_used_items(self, days: int = 7) -> List[Dict]:
+        """Get items that were added to lists in the past N days"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT DISTINCT item_name, category, COUNT(*) as usage_count
+                    FROM shopping_items 
+                    WHERE created_at >= datetime('now', '-{} days')
+                    GROUP BY item_name, category
+                    ORDER BY usage_count DESC, MAX(created_at) DESC
+                    LIMIT 20
+                '''.format(days))
+                
+                results = cursor.fetchall()
+                return [{'name': row[0], 'category': row[1], 'usage_count': row[2]} for row in results]
+        except Exception as e:
+            logging.error(f"Error getting recently used items: {e}")
+            return []
+
     def approve_category_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
         """Approve a category suggestion and create the category"""
         try:
