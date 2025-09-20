@@ -879,6 +879,37 @@ class ShoppingBot:
             await self.process_category_rename(update, context, text)
             return
 
+    async def process_custom_item_from_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
+        """Process custom item addition from search results - show ADD/NOTES/BACK TO CATEGORIES options directly"""
+        # Ask for optional note
+        context.user_data['waiting_for_note'] = True
+        context.user_data['item_info'] = {
+            'name': item_name,
+            'category': 'custom',
+            'user_id': update.effective_user.id,
+            'list_id': 1  # Default to supermarket list
+        }
+        
+        user_id = update.effective_user.id
+        keyboard = [
+            [
+                InlineKeyboardButton(self.get_message(user_id, 'btn_add'), callback_data="skip_note"),
+                InlineKeyboardButton(self.get_message(user_id, 'btn_notes'), callback_data="add_note")
+            ],
+            [
+                InlineKeyboardButton(self.get_message(user_id, 'btn_back_categories'), callback_data="categories")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        adding_text = self.get_message(user_id, 'adding_item', item=item_name)
+        prompt_text = self.get_message(user_id, 'add_notes_prompt')
+
+        await update.callback_query.edit_message_text(
+            f"{adding_text}\n\n{prompt_text}",
+            reply_markup=reply_markup
+        )
+
     async def process_custom_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
         """Process custom item addition"""
         context.user_data['waiting_for_item'] = False
@@ -913,6 +944,8 @@ class ShoppingBot:
         """Process item addition with optional note"""
         context.user_data['waiting_for_note'] = False
         context.user_data.pop('item_info', None)
+        # Clear search context if this was from a search
+        context.user_data.pop('current_search_query', None)
         
         # Get the target list ID
         list_id = item_info.get('list_id', 1)  # Default to supermarket list
@@ -1434,14 +1467,19 @@ class ShoppingBot:
             await self.show_add_new_item_options(update, context, category_key)
         
         elif data == "add_to_list_from_search":
-            # Handle "Add to List" from search results - start custom item process
-            context.user_data['waiting_for_item'] = True
+            # Handle "Add to List" from search results - use search query directly
             user_id = update.effective_user.id
-            await update.callback_query.edit_message_text(
-                f"✏️ **{self.get_message(user_id, 'btn_add_item')}**\n\n"
-                f"{self.get_message(user_id, 'add_custom_item_prompt')}",
-                parse_mode='Markdown'
-            )
+            search_query = context.user_data.get('current_search_query', '')
+            
+            if not search_query:
+                await update.callback_query.edit_message_text(
+                    "❌ Error: Search query not found. Please try searching again.",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Go directly to ADD/NOTES/BACK TO CATEGORIES options
+            await self.process_custom_item_from_search(update, context, search_query)
         
         elif data == "suggest_from_search":
             # Handle "Suggest for Category" from search results - show category selection
@@ -3003,6 +3041,9 @@ class ShoppingBot:
         # Search in both categories and current list
         category_results = self.search_items(search_query.strip(), user_id)
         list_results = self.search_items_in_list(search_query.strip(), target_list_id, user_id)
+        
+        # Store search query for later use
+        context.user_data['current_search_query'] = search_query.strip()
         
         # Show comprehensive search results
         await self.show_comprehensive_search_results(update, context, search_query.strip(), category_results, list_results, list_name, target_list_id)
