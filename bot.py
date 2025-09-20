@@ -537,6 +537,21 @@ class ShoppingBot:
         input_prompt = self.get_message(user_id, 'suggest_item_input').format(category=category_name)
         await update.callback_query.edit_message_text(input_prompt)
 
+    async def start_suggestion_from_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start suggestion process from search results"""
+        user_id = update.effective_user.id
+        
+        # Store that this is from search
+        context.user_data['suggestion_from_search'] = True
+        context.user_data['waiting_for_suggestion'] = True
+        
+        # Set target list_id (default to 1 for supermarket list)
+        if 'target_list_id' not in context.user_data:
+            context.user_data['target_list_id'] = 1
+        
+        # Show category selection for suggestion
+        await self.show_suggestion_categories(update, context)
+
     async def start_new_item_process(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
         """Start the new item process for a specific category (admin only)"""
         user_id = update.effective_user.id
@@ -1379,6 +1394,18 @@ class ShoppingBot:
             # Handle "ADD NEW ITEM" button from category
             category_key = data.replace("add_new_item_", "")
             await self.show_add_new_item_options(update, context, category_key)
+        
+        elif data == "add_to_list_from_search":
+            # Handle "Add to List" from search results
+            await self.add_item_command(update, context)
+        
+        elif data == "suggest_from_search":
+            # Handle "Suggest for Category" from search results
+            await self.start_suggestion_from_search(update, context)
+        
+        elif data == "search_again":
+            # Handle "Search Again" button
+            await self.show_search_prompt(update, context)
         
         elif data.startswith("add_to_list_"):
             # Handle "Add to Current List" button
@@ -2524,7 +2551,18 @@ class ShoppingBot:
                 item_name_he=hebrew_translation.strip(),
                 category=category_name
             )
-            await update.message.reply_text(success_message)
+            
+            # Check if this came from search and add navigation button
+            if context.user_data.get('suggestion_from_search'):
+                keyboard = [[InlineKeyboardButton(
+                    "🔍 Search Again",
+                    callback_data="search_again"
+                )]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(success_message, reply_markup=reply_markup)
+                context.user_data.pop('suggestion_from_search', None)
+            else:
+                await update.message.reply_text(success_message)
             
             # Notify admins about new suggestion
             await self.notify_admins_new_suggestion(update, context, item_name_en, hebrew_translation.strip(), category_name)
@@ -2903,22 +2941,17 @@ class ShoppingBot:
         
         context.user_data['waiting_for_search'] = False
         
-        # Check if this is a list-specific search
-        search_list_id = context.user_data.get('search_list_id')
-        if search_list_id:
-            # Search within specific list
-            results = self.search_items_in_list(search_query.strip(), search_list_id, user_id)
-            list_info = self.db.get_list_by_id(search_list_id)
-            list_name = list_info['name'] if list_info else self.get_message(user_id, 'list_fallback').format(list_id=search_list_id)
-        else:
-            # General search (for backward compatibility)
-            results = self.search_items(search_query.strip(), user_id)
-            list_name = self.get_message(user_id, 'all_lists')
+        # Get target list ID (default to supermarket list if not specified)
+        target_list_id = context.user_data.get('search_list_id', 1)
+        list_info = self.db.get_list_by_id(target_list_id)
+        list_name = list_info['name'] if list_info else self.get_message(user_id, 'list_fallback').format(list_id=target_list_id)
         
-        if results:
-            await self.show_search_results(update, context, search_query.strip(), results, list_name)
-        else:
-            await self.show_no_search_results(update, context, search_query.strip(), list_name)
+        # Search in both categories and current list
+        category_results = self.search_items(search_query.strip(), user_id)
+        list_results = self.search_items_in_list(search_query.strip(), target_list_id, user_id)
+        
+        # Show comprehensive search results
+        await self.show_comprehensive_search_results(update, context, search_query.strip(), category_results, list_results, list_name, target_list_id)
         
         # Clear search context
         context.user_data.pop('search_list_id', None)
@@ -3003,6 +3036,82 @@ class ShoppingBot:
                 unique_results.append(result)
         
         return unique_results
+
+    async def show_comprehensive_search_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                              query: str, category_results: List[Dict], list_results: List[Dict], 
+                                              list_name: str, target_list_id: int):
+        """Show comprehensive search results from both categories and list"""
+        user_id = update.effective_user.id
+        
+        # Create message
+        message = f"🔍 **Search Results for '{query}'**\n\n"
+        
+        # Show items found in categories (available to add)
+        if category_results:
+            message += f"📂 **Available in Categories:**\n"
+            for result in category_results:
+                message += f"• {result['category_emoji']} {result['item_name']} ({result['hebrew_name']}) - {result['category']}\n"
+            message += "\n"
+        
+        # Show items found in current list (already added)
+        if list_results:
+            message += f"📋 **Already in {list_name}:**\n"
+            for result in list_results:
+                notes_text = f" - {result['notes']}" if result.get('notes') else ""
+                message += f"• ✅ {result['item_name']}{notes_text}\n"
+            message += "\n"
+        
+        # Create keyboard based on what was found
+        keyboard = []
+        
+        if category_results:
+            # Add buttons for items found in categories
+            for result in category_results[:5]:  # Limit to 5 items to avoid too many buttons
+                keyboard.append([InlineKeyboardButton(
+                    f"➕ Add {result['item_name']}",
+                    callback_data=f"add_item_{result['category_key']}_{result['item_name']}"
+                )])
+        
+        if list_results:
+            # Add buttons for items found in list (to remove)
+            for result in list_results[:3]:  # Limit to 3 items
+                keyboard.append([InlineKeyboardButton(
+                    f"❌ Remove {result['item_name']}",
+                    callback_data=f"remove_item_{target_list_id}_{result['item_name']}"
+                )])
+        
+        # Add action buttons
+        if not category_results and not list_results:
+            # No results found - offer two options
+            keyboard.append([
+                InlineKeyboardButton(
+                    "➕ Add to List",
+                    callback_data="add_to_list_from_search"
+                ),
+                InlineKeyboardButton(
+                    "💡 Suggest for Category",
+                    callback_data="suggest_from_search"
+                )
+            ])
+            message += "❌ **No items found**\n\nChoose how to add this item:"
+        else:
+            # Results found - add navigation buttons
+            if category_results:
+                keyboard.append([InlineKeyboardButton(
+                    "📂 Browse Categories",
+                    callback_data="categories"
+                )])
+            keyboard.append([InlineKeyboardButton(
+                "📋 Back to List",
+                callback_data=f"list_menu_{target_list_id}"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
     def search_items_in_list(self, query: str, list_id: int, user_id: int) -> List[Dict]:
         """Search for items within a specific list"""
