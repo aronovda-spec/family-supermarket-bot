@@ -1638,6 +1638,8 @@ class ShoppingBot:
                 
                 await query.edit_message_text("✅ Suggestion approved!")
                 await self.show_admin_management_menu(update, context)
+                # Also update the main menu to refresh the badge
+                await self.show_main_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error approving suggestion.")
         
@@ -1653,6 +1655,8 @@ class ShoppingBot:
                 
                 await query.edit_message_text("❌ Suggestion rejected.")
                 await self.show_admin_management_menu(update, context)
+                # Also update the main menu to refresh the badge
+                await self.show_main_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error rejecting suggestion.")
         
@@ -6026,6 +6030,9 @@ class ShoppingBot:
             await self.notify_user_category_suggestion_result(suggestion['suggested_by'], suggestion['name_en'], 'approved')
             # Notify all authorized users and admins about the approval
             await self.notify_all_users_category_approved(suggestion, user_id)
+            
+            # Also update the main menu to refresh the badge
+            await self.show_main_menu(update, context)
         else:
             await update.callback_query.answer("Failed to approve suggestion!")
     
@@ -6055,6 +6062,9 @@ class ShoppingBot:
             
             # Notify the user who suggested it
             await self.notify_user_category_suggestion_result(suggestion['suggested_by'], suggestion['name_en'], 'rejected')
+            
+            # Also update the main menu to refresh the badge
+            await self.show_main_menu(update, context)
         else:
             await update.callback_query.answer("Failed to reject suggestion!")
     
