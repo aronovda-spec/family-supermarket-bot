@@ -625,7 +625,7 @@ class ShoppingBot:
         category_key = context.user_data.get('add_to_list_category')
         
         if not category_key:
-            await update.message.reply_text("❌ Error: Category not found.")
+            await update.message.reply_text(self.get_message(user_id, 'error_category_not_found'))
             return
         
         # Add the item directly to the current list
@@ -656,7 +656,7 @@ class ShoppingBot:
             # Notify all users about the new item
             await self.notify_users_item_added(update, context, item_name.strip(), category_name, list_name, user_id)
         else:
-            await update.message.reply_text("❌ Failed to add item. Please try again.")
+            await update.message.reply_text(self.get_message(user_id, 'failed_to_add_item'))
         
         # Clear waiting states
         context.user_data.pop('waiting_for_add_to_list', None)
@@ -1506,10 +1506,24 @@ class ShoppingBot:
             if category_key and item_name:
                 await self.process_category_item_selection(update, context, category_key, item_name)
         
+        elif data.startswith("restore_item_"):
+            # Handle "Restore Original Item" from restoration options
+            parts = data.replace("restore_item_", "").split("_", 1)
+            if len(parts) == 2:
+                category_key, item_name = parts
+                await self.handle_restore_item(update, context, category_key, item_name)
+        
         elif data.startswith("add_new_item_"):
-            # Handle "ADD NEW ITEM" button from category
-            category_key = data.replace("add_new_item_", "")
-            await self.show_add_new_item_options(update, context, category_key)
+            # Handle "Add as New Item" from restoration options OR "ADD NEW ITEM" from category
+            if "_" in data.replace("add_new_item_", ""):  # This has category_key_item_name format (restoration)
+                parts = data.replace("add_new_item_", "").split("_", 1)
+                if len(parts) == 2:
+                    category_key, item_name = parts
+                    await self.handle_add_as_new_item(update, context, category_key, item_name)
+            else:
+                # Handle "ADD NEW ITEM" button from category (original flow)
+                category_key = data.replace("add_new_item_", "")
+                await self.show_add_new_item_options(update, context, category_key)
         
         elif data == "add_to_list_from_search":
             # Handle "Add to List" from search results - use search query directly
@@ -1518,7 +1532,7 @@ class ShoppingBot:
             
             if not search_query:
                 await update.callback_query.edit_message_text(
-                    "❌ Error: Search query not found. Please try searching again.",
+                    self.get_message(user_id, 'error_search_query_not_found'),
                     parse_mode='Markdown'
                 )
                 return
@@ -1547,7 +1561,7 @@ class ShoppingBot:
                 await self.show_voice_search_prompt(update, context)
             except Exception as e:
                 logging.error(f"Error in voice search: {e}")
-                await update.callback_query.edit_message_text("❌ Error opening voice search. Please try again.")
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'error_opening_voice_search'))
         
         elif data.startswith("text_search_list_"):
             # Handle text search for specific list
@@ -1610,7 +1624,7 @@ class ShoppingBot:
                 await query.edit_message_text(success_text)
                 await self.show_main_menu(update, context)
             else:
-                await query.edit_message_text("❌ Error changing language.")
+                await query.edit_message_text(self.get_message(user_id, 'error_changing_language'))
         
         elif data.startswith("suggest_category_"):
             category_key = data.replace("suggest_category_", "")
@@ -1641,7 +1655,7 @@ class ShoppingBot:
                 # Also update the main menu to refresh the badge
                 await self.show_main_menu(update, context)
             else:
-                await query.edit_message_text("❌ Error approving suggestion.")
+                await query.edit_message_text(self.get_message(user_id, 'error_approving_suggestion'))
         
         elif data.startswith("reject_suggestion_"):
             suggestion_id = int(data.replace("reject_suggestion_", ""))
@@ -1693,7 +1707,7 @@ class ShoppingBot:
             context.user_data['waiting_for_new_item'] = True
             
             category_name = self.get_category_name(user_id, category_key)
-            input_prompt = f"➕ ADD NEW ITEM (ADMIN)\n\nCategory: {category_name}\n\nPlease type the item name in English:\n\n💡 Tips:\n• Use clear, simple names\n• Avoid brand names\n• Examples: 'Organic honey', 'Fresh basil', 'Whole wheat bread'\n\nType the item name:"
+            input_prompt = f"{self.get_message(user_id, 'add_new_item_admin_title')}\n\nCategory: {category_name}\n\n{self.get_message(user_id, 'add_new_item_prompt')}\n\n{self.get_message(user_id, 'add_new_item_tips')}\n\n{self.get_message(user_id, 'type_item_name')}"
             await query.edit_message_text(input_prompt)
         
         elif data.startswith("search_add_list_"):
@@ -3027,15 +3041,20 @@ class ShoppingBot:
             await update.message.reply_text("❌ Please provide an item name.")
             return
         
+        category_key = context.user_data.get('new_item_category')
+        category_name = self.get_category_name(user_id, category_key)
+        
+        # Check if item was previously deleted (restoration detection)
+        if self.db.is_item_deleted(category_key, item_name.strip()):
+            await self.show_restoration_options(update, context, category_key, item_name.strip())
+            return
+        
         # Store the item name and ask for Hebrew translation
         context.user_data['new_item_name'] = item_name.strip()
         context.user_data['waiting_for_new_item'] = False
         context.user_data['waiting_for_new_item_translation'] = True
         
-        category_key = context.user_data.get('new_item_category')
-        category_name = self.get_category_name(user_id, category_key)
-        
-        translation_prompt = f"🌐 Translation Required (Admin)\n\nItem: {item_name.strip()}\nCategory: {category_name}\n\nPlease provide the Hebrew translation:\n\n💡 Tips:\n• Use common Hebrew terms\n• Keep it simple and clear\n• Examples: 'דבש אורגני', 'בזיליקום טרי', 'לחם מחיטה מלאה'\n\nType the Hebrew translation:"
+        translation_prompt = f"{self.get_message(user_id, 'translation_required_admin')}\n\nItem: {item_name.strip()}\nCategory: {category_name}\n\n{self.get_message(user_id, 'provide_hebrew_translation')}\n\n{self.get_message(user_id, 'hebrew_translation_tips')}\n\n{self.get_message(user_id, 'type_hebrew_translation')}"
         
         await update.message.reply_text(translation_prompt)
 
@@ -3044,7 +3063,7 @@ class ShoppingBot:
         user_id = update.effective_user.id
         
         if not hebrew_translation.strip():
-            await update.message.reply_text("❌ Please provide a Hebrew translation.")
+            await update.message.reply_text(self.get_message(user_id, 'please_provide_hebrew'))
             return
         
         # Get stored data
@@ -3052,24 +3071,30 @@ class ShoppingBot:
         category_key = context.user_data.get('new_item_category')
         
         if not item_name_en or not category_key:
-            await update.message.reply_text("❌ Error processing new item. Please try again.")
+            await update.message.reply_text(self.get_message(user_id, 'error_processing_new_item'))
             return
         
         # Add item directly to the category (admin privilege)
         result = self.add_item_to_category(category_key, item_name_en, hebrew_translation.strip())
         if result:
             category_name = self.get_category_name(user_id, category_key)
-            success_message = f"✅ New Item Added!\n\n📝 Item: {item_name_en}\n🌐 Hebrew: {hebrew_translation.strip()}\n📂 Category: {category_name}\n\nThis item is now available for everyone!"
-            await update.message.reply_text(success_message)
+            success_message = self.get_message(user_id, 'item_added_as_new_success').format(
+                item_name=item_name_en, 
+                category_name=category_name
+            ) + f"\n\n🌐 Hebrew: {hebrew_translation.strip()}\n\nThis item is now available for everyone!"
+            await update.message.reply_text(success_message, parse_mode='Markdown')
             
             # Notify all users about the new item
             await self.notify_users_new_item(update, context, item_name_en, hebrew_translation.strip(), category_name)
         else:
             # Check if it's a duplicate
             if self.db.is_item_in_category(category_key, item_name_en):
-                await update.message.reply_text(f"❌ Error adding new item - Duplicate!\n\nThe item **{item_name_en}** already exists in the **{self.get_category_name(user_id, category_key)}** category.")
+                await update.message.reply_text(self.get_message(user_id, 'error_adding_new_item_duplicate').format(
+                    item_name=item_name_en, 
+                    category_name=self.get_category_name(user_id, category_key)
+                ), parse_mode='Markdown')
             else:
-                await update.message.reply_text("❌ Error adding new item. Please try again.")
+                await update.message.reply_text(self.get_message(user_id, 'error_adding_new_item'))
         
         # Clear waiting states
         context.user_data.pop('waiting_for_new_item_translation', None)
@@ -3088,6 +3113,81 @@ class ShoppingBot:
         except Exception as e:
             logging.error(f"Error adding item to category: {e}")
             return False
+
+    async def show_restoration_options(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                     category_key: str, item_name: str):
+        """Show restoration options for deleted items"""
+        user_id = update.effective_user.id
+        category_name = self.get_category_name(user_id, category_key)
+        
+        message = self.get_message(user_id, 'item_restoration_detected').format(
+            item_name=item_name, 
+            category_name=category_name
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_restore_original_item'), 
+                callback_data=f"restore_item_{category_key}_{item_name}"
+            )],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_add_as_new_item'), 
+                callback_data=f"add_new_item_{category_key}_{item_name}"
+            )],
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_cancel_restoration'), 
+                callback_data=f"category_{category_key}"
+            )]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_restore_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                category_key: str, item_name: str):
+        """Handle restoring a deleted item"""
+        user_id = update.effective_user.id
+        category_name = self.get_category_name(user_id, category_key)
+        
+        # Restore the item by removing it from deleted_items table
+        success = self.db.restore_deleted_item(category_key, item_name)
+        
+        if success:
+            message = self.get_message(user_id, 'item_restored_success').format(
+                item_name=item_name, 
+                category_name=category_name
+            )
+            
+            # Show success message with back button
+            keyboard = [[InlineKeyboardButton(
+                self.get_message(user_id, 'btn_back_categories'), 
+                callback_data="categories"
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'failed_to_restore_item'))
+
+    async def handle_add_as_new_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                   category_key: str, item_name: str):
+        """Handle adding a deleted item as a new item"""
+        user_id = update.effective_user.id
+        
+        # Store the item name and proceed with normal new item flow
+        context.user_data['new_item_name'] = item_name
+        context.user_data['new_item_category'] = category_key
+        context.user_data['waiting_for_new_item_translation'] = True
+        
+        category_name = self.get_category_name(user_id, category_key)
+        
+        translation_prompt = f"{self.get_message(user_id, 'translation_required_admin')}\n\nItem: {item_name}\nCategory: {category_name}\n\n{self.get_message(user_id, 'provide_hebrew_translation')}\n\n{self.get_message(user_id, 'hebrew_translation_tips')}\n\n{self.get_message(user_id, 'type_hebrew_translation')}"
+        
+        await update.callback_query.edit_message_text(translation_prompt)
 
     async def notify_users_new_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                   item_name_en: str, item_name_he: str, category_name: str):
