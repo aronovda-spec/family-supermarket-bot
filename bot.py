@@ -1637,7 +1637,7 @@ class ShoppingBot:
                     await self.notify_all_users_item_approved(suggestion, user_id)
                 
                 await query.edit_message_text("✅ Suggestion approved!")
-                await self.show_main_menu(update, context)
+                await self.show_admin_management_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error approving suggestion.")
         
@@ -1652,7 +1652,7 @@ class ShoppingBot:
                     await self.notify_suggestion_result(update, context, suggestion, 'rejected')
                 
                 await query.edit_message_text("❌ Suggestion rejected.")
-                await self.show_main_menu(update, context)
+                await self.show_admin_management_menu(update, context)
             else:
                 await query.edit_message_text("❌ Error rejecting suggestion.")
         
@@ -6016,7 +6016,7 @@ class ShoppingBot:
             
             keyboard = [[InlineKeyboardButton(
                 self.get_message(user_id, 'btn_back_menu'),
-                callback_data="manage_category_suggestions"
+                callback_data="admin_management"
             )]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -6047,7 +6047,7 @@ class ShoppingBot:
             
             keyboard = [[InlineKeyboardButton(
                 self.get_message(user_id, 'btn_back_menu'),
-                callback_data="manage_category_suggestions"
+                callback_data="admin_management"
             )]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
