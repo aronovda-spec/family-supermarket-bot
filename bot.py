@@ -315,6 +315,30 @@ class ShoppingBot:
         elif update.callback_query:
             await update.callback_query.message.reply_text(main_menu_text, reply_markup=reply_markup)
 
+    def clear_all_waiting_states(self, context: ContextTypes.DEFAULT_TYPE):
+        """Clear all waiting states and temporary data"""
+        # Clear all waiting states
+        waiting_states = [
+            'waiting_for_item', 'waiting_for_note', 'waiting_for_broadcast',
+            'waiting_for_suggestion_item', 'waiting_for_suggestion', 'waiting_for_suggestion_translation',
+            'waiting_for_new_item', 'waiting_for_add_to_list', 'waiting_for_new_item_translation',
+            'waiting_for_search', 'waiting_for_list_name', 'waiting_for_list_description',
+            'waiting_for_edit_list_name', 'waiting_for_edit_list_description'
+        ]
+        
+        for state in waiting_states:
+            context.user_data.pop(state, None)
+        
+        # Clear temporary data
+        temp_data = [
+            'item_info', 'suggestion_item_name', 'suggestion_category', 'new_item_name',
+            'new_item_category', 'add_to_list_category', 'target_list_id', 'search_list_id',
+            'new_list_name', 'suggestion_from_search'
+        ]
+        
+        for data in temp_data:
+            context.user_data.pop(data, None)
+
     async def categories_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /categories command - show category selection"""
         if not self.db.is_user_authorized(update.effective_user.id):
@@ -1211,6 +1235,8 @@ class ShoppingBot:
         data = query.data
 
         if data == "main_menu":
+            # Clear all waiting states when going back to main menu
+            self.clear_all_waiting_states(context)
             await query.delete_message()
             await self.show_main_menu(update, context)
         
@@ -1225,6 +1251,8 @@ class ShoppingBot:
             await self.users_command(update, context)
         
         elif data == "categories":
+            # Clear waiting states when going back to categories
+            self.clear_all_waiting_states(context)
             await self.show_categories(update, context)
         
         # Category creation callbacks
@@ -1666,6 +1694,8 @@ class ShoppingBot:
             await self.show_create_list_prompt(update, context)
         
         elif data == "my_lists":
+            # Clear waiting states when going back to lists
+            self.clear_all_waiting_states(context)
             await self.show_my_lists(update, context)
         
         elif data == "manage_lists":
