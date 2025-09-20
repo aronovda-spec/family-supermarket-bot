@@ -826,13 +826,8 @@ class ShoppingBot:
             await self.process_new_item_translation(update, context, text)
             return
         
-        # Handle search input
-        if context.user_data.get('waiting_for_search'):
-            await self.process_search(update, context, text)
-            return
-        
-        # Handle multi-list message buttons
-        elif (text == self.get_message(user_id, 'btn_supermarket_list') or 
+        # Handle multi-list message buttons FIRST (to cancel previous operations)
+        if (text == self.get_message(user_id, 'btn_supermarket_list') or 
               text == self.get_message(update.effective_user.id, 'btn_supermarket_list')):
             await self.supermarket_list_command(update, context)
             return
@@ -870,6 +865,11 @@ class ShoppingBot:
         elif text.startswith("🛒 ") or text.startswith("📋 "):
             list_name = text[2:]  # Remove emoji prefix
             await self.show_list_menu(update, context, list_name)
+            return
+        
+        # Handle search input (after all button commands)
+        if context.user_data.get('waiting_for_search'):
+            await self.process_search(update, context, text)
             return
         
         # Handle multi-list input states
