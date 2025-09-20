@@ -1522,6 +1522,25 @@ class ShoppingBot:
             # Handle voice search option
             await self.show_voice_search_prompt(update, context)
         
+        elif data.startswith("text_search_list_"):
+            # Handle text search for specific list
+            list_id = int(data.replace("text_search_list_", ""))
+            context.user_data['waiting_for_search'] = True
+            context.user_data['search_list_id'] = list_id
+            user_id = update.effective_user.id
+            list_info = self.db.get_list_by_id(list_id)
+            list_name = list_info['name'] if list_info else f"List {list_id}"
+            prompt_text = self.get_message(user_id, 'search_prompt')
+            await update.callback_query.edit_message_text(
+                f"🔍 **Search in {list_name}**\n\n{prompt_text}"
+            )
+        
+        elif data.startswith("voice_search_list_"):
+            # Handle voice search for specific list
+            list_id = int(data.replace("voice_search_list_", ""))
+            context.user_data['search_list_id'] = list_id
+            await self.show_voice_search_prompt(update, context)
+        
         elif data == "start_voice_recording":
             # Handle voice recording start
             await self.start_voice_recording(update, context)
@@ -4467,7 +4486,7 @@ class ShoppingBot:
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def show_search_for_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show search interface for a specific list"""
+        """Show search interface for a specific list with method selection"""
         user_id = update.effective_user.id
         
         list_info = self.db.get_list_by_id(list_id)
@@ -4478,17 +4497,19 @@ class ShoppingBot:
         # Set the target list for search
         context.user_data['search_list_id'] = list_id
         
-        keyboard = [[InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]]
+        # Create keyboard with text and voice search options
+        keyboard = [
+            [InlineKeyboardButton("✏️ Text Search", callback_data=f"text_search_list_{list_id}")],
+            [InlineKeyboardButton("🎤 Voice Search", callback_data=f"voice_search_list_{list_id}")],
+            [InlineKeyboardButton("🏠 Back to List", callback_data=f"list_menu_{list_id}")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         message = f"🔍 **Search in {list_info['name']}**\n\n"
         message += self.get_message(user_id, 'search_prompt')
+        message += "\n\nChoose search method:"
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-        
-        # Set waiting state for search input
-        context.user_data['waiting_for_search'] = True
-        context.user_data['search_list_id'] = list_id
     
     async def show_admin_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show admin menu with all admin controls"""
