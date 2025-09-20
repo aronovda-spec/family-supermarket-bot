@@ -537,20 +537,6 @@ class ShoppingBot:
         input_prompt = self.get_message(user_id, 'suggest_item_input').format(category=category_name)
         await update.callback_query.edit_message_text(input_prompt)
 
-    async def start_suggestion_from_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start suggestion process from search results"""
-        user_id = update.effective_user.id
-        
-        # Store that this is from search
-        context.user_data['suggestion_from_search'] = True
-        context.user_data['waiting_for_suggestion'] = True
-        
-        # Set target list_id (default to 1 for supermarket list)
-        if 'target_list_id' not in context.user_data:
-            context.user_data['target_list_id'] = 1
-        
-        # Show category selection for suggestion
-        await self.show_suggestion_categories(update, context)
 
     async def start_new_item_process(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
         """Start the new item process for a specific category (admin only)"""
@@ -1396,12 +1382,18 @@ class ShoppingBot:
             await self.show_add_new_item_options(update, context, category_key)
         
         elif data == "add_to_list_from_search":
-            # Handle "Add to List" from search results
-            await self.add_item_command(update, context)
+            # Handle "Add to List" from search results - start custom item process
+            context.user_data['waiting_for_item'] = True
+            user_id = update.effective_user.id
+            await update.callback_query.edit_message_text(
+                f"✏️ **{self.get_message(user_id, 'btn_add_item')}**\n\n"
+                f"{self.get_message(user_id, 'add_custom_item_prompt')}",
+                parse_mode='Markdown'
+            )
         
         elif data == "suggest_from_search":
-            # Handle "Suggest for Category" from search results
-            await self.start_suggestion_from_search(update, context)
+            # Handle "Suggest for Category" from search results - show category selection
+            await self.show_suggestion_categories(update, context)
         
         elif data == "search_again":
             # Handle "Search Again" button
@@ -2475,6 +2467,12 @@ class ShoppingBot:
     async def show_suggestion_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show category selection for item suggestions"""
         user_id = update.effective_user.id
+        
+        # Set search context if this is from search results
+        if update.callback_query and update.callback_query.data == "suggest_from_search":
+            context.user_data['suggestion_from_search'] = True
+            context.user_data['target_list_id'] = context.user_data.get('search_list_id', 1)
+        
         keyboard = []
         
         # Create category buttons
