@@ -1403,6 +1403,8 @@ class ShoppingBot:
             await self.suggest_category_command(update, context)
         
         elif data == "admin_management":
+            # Clear all waiting states when opening admin management
+            self.clear_all_waiting_states(context)
             await self.show_admin_management_menu(update, context)
         
         elif data == "user_management":
@@ -1790,9 +1792,13 @@ class ShoppingBot:
         
         # Multi-list callback handlers
         elif data == "supermarket_list":
+            # Clear all waiting states when opening supermarket menu
+            self.clear_all_waiting_states(context)
             await self.show_supermarket_list(update, context)
         
         elif data == "new_list":
+            # Clear all waiting states when creating new list
+            self.clear_all_waiting_states(context)
             await self.show_create_list_prompt(update, context)
         
         elif data == "my_lists":
@@ -2517,6 +2523,9 @@ class ShoppingBot:
         if not self.db.is_user_authorized(update.effective_user.id):
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
+        
+        # Clear all waiting states when using broadcast command
+        self.clear_all_waiting_states(context)
 
         # Check if user is admin or authorized
         if not (self.db.is_user_admin(update.effective_user.id) or self.db.is_user_authorized(update.effective_user.id)):
@@ -3507,6 +3516,9 @@ class ShoppingBot:
         if not self.db.is_user_authorized(update.effective_user.id):
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
+        
+        # Clear all waiting states when using language command
+        self.clear_all_waiting_states(context)
 
         await self.show_language_selection(update, context)
 
