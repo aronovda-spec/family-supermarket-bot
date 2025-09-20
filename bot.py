@@ -204,6 +204,9 @@ class ShoppingBot:
         """Handle /start command"""
         user = update.effective_user
         
+        # Clear all waiting states when using /start command
+        self.clear_all_waiting_states(context)
+        
         # Check if user is already registered
         if not self.db.is_user_authorized(user.id):
             # Auto-register if admin, otherwise require manual approval
@@ -247,6 +250,8 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
         
+        # Clear all waiting states when using /menu command
+        self.clear_all_waiting_states(context)
         await self.show_main_menu(update, context)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -254,7 +259,9 @@ class ShoppingBot:
         if not self.db.is_user_authorized(update.effective_user.id):
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
-            
+        
+        # Clear all waiting states when using /help command
+        self.clear_all_waiting_states(context)
         help_text = self.get_message(update.effective_user.id, 'help')
         await update.message.reply_text(help_text)
 
@@ -345,6 +352,8 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Clear all waiting states when using /categories command
+        self.clear_all_waiting_states(context)
         await self.show_categories(update, context)
 
     async def show_categories(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -644,6 +653,8 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Clear all waiting states when using /add command
+        self.clear_all_waiting_states(context)
         context.user_data['waiting_for_item'] = True
         user_id = update.effective_user.id
         await update.message.reply_text(
@@ -877,7 +888,8 @@ class ShoppingBot:
         context.user_data['item_info'] = {
             'name': item_name,
             'category': 'custom',
-            'user_id': update.effective_user.id
+            'user_id': update.effective_user.id,
+            'list_id': 1  # Default to supermarket list
         }
         
         user_id = update.effective_user.id
@@ -956,6 +968,8 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Clear all waiting states when using /list command
+        self.clear_all_waiting_states(context)
         items = self.db.get_shopping_list()
         
         if not items:
@@ -1037,6 +1051,8 @@ class ShoppingBot:
                 await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Clear all waiting states when using /summary command
+        self.clear_all_waiting_states(context)
         items = self.db.get_shopping_list()
         
         if not items:
@@ -1129,6 +1145,8 @@ class ShoppingBot:
                 await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Clear all waiting states when using /myitems command
+        self.clear_all_waiting_states(context)
         # If list_id is provided, get items for that specific list, otherwise get all items
         if list_id:
             user_items = self.db.get_items_by_user_in_list(update.effective_user.id, list_id)
@@ -2949,6 +2967,8 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
 
+        # Clear all waiting states when using /search command
+        self.clear_all_waiting_states(context)
         await self.show_search_prompt(update, context)
 
     async def show_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3319,6 +3339,8 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
         
+        # Clear all waiting states when opening supermarket menu
+        self.clear_all_waiting_states(context)
         await self.show_supermarket_list(update, context)
     
     async def show_supermarket_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
