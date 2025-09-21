@@ -1,8 +1,7 @@
-# Environment variables
+# Environment files with sensitive data
+bot_config.env
 .env
-.env.local
-.env.production
-.env.staging
+*.env
 
 # Database files
 *.db
@@ -11,14 +10,10 @@
 
 # Python cache
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# Virtual environment
-venv/
-env/
-ENV/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
 # IDE files
 .vscode/
