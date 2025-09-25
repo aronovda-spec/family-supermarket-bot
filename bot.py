@@ -343,7 +343,8 @@ class ShoppingBot:
             'waiting_for_suggestion_item', 'waiting_for_suggestion', 'waiting_for_suggestion_translation',
             'waiting_for_new_item', 'waiting_for_add_to_list', 'waiting_for_new_item_translation',
             'waiting_for_search', 'waiting_for_list_name', 'waiting_for_list_description',
-            'waiting_for_edit_list_name', 'waiting_for_edit_list_description'
+            'waiting_for_edit_list_name', 'waiting_for_edit_list_description',
+            'waiting_for_voice_search', 'waiting_for_voice_text'
         ]
         
         for state in waiting_states:
@@ -3248,10 +3249,17 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         prompt_text = self.get_message(user_id, 'search_prompt')
-        await update.message.reply_text(
-            f"{prompt_text}\n\nChoose search method:",
-            reply_markup=reply_markup
-        )
+        
+        if update.message:
+            await update.message.reply_text(
+                f"{prompt_text}\n\nChoose search method:",
+                reply_markup=reply_markup
+            )
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(
+                f"{prompt_text}\n\nChoose search method:",
+                reply_markup=reply_markup
+            )
 
     async def show_voice_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show voice search prompt"""
