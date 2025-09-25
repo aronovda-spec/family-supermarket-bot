@@ -4,19 +4,40 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv('bot_config.env')
 
-# Bot Configuration
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable is required")
+# Bot Configuration - Support for Developer Mode
+DEVELOPER_MODE = os.getenv('DEVELOPER_MODE', 'false').lower() == 'true'
+
+if DEVELOPER_MODE:
+    # Use developer bot token
+    BOT_TOKEN = os.getenv('DEV_BOT_TOKEN')
+    if not BOT_TOKEN:
+        raise ValueError("DEV_BOT_TOKEN environment variable is required for developer mode")
+    print("🛠️ Running in DEVELOPER MODE")
+else:
+    # Use production bot token
+    BOT_TOKEN = os.getenv('BOT_TOKEN')
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN environment variable is required")
+    print("🚀 Running in PRODUCTION MODE")
 
 # Admin Configuration
 ADMIN_IDS = []
 admin_ids_str = os.getenv('ADMIN_IDS', '')
-if admin_ids_str:
-    ADMIN_IDS = [int(id.strip()) for id in admin_ids_str.split(',') if id.strip()]
+if admin_ids_str and admin_ids_str != 'your_admin_user_id_here':
+    try:
+        ADMIN_IDS = [int(id.strip()) for id in admin_ids_str.split(',') if id.strip()]
+    except ValueError:
+        print(f"⚠️ Warning: Invalid ADMIN_IDS format: {admin_ids_str}")
+        print("💡 Please set ADMIN_IDS to your Telegram user ID (numbers only)")
+        ADMIN_IDS = []
 
-# Database Configuration
-DATABASE_PATH = os.getenv('DATABASE_PATH', 'shopping_bot.db')
+# Database Configuration - Separate database for developer mode
+if DEVELOPER_MODE:
+    DATABASE_PATH = os.getenv('DEV_DATABASE_PATH', 'shopping_bot_dev.db')
+    print(f"📁 Using developer database: {DATABASE_PATH}")
+else:
+    DATABASE_PATH = os.getenv('DATABASE_PATH', 'shopping_bot.db')
+    print(f"📁 Using production database: {DATABASE_PATH}")
 
 # Categories Configuration - Multi-language
 CATEGORIES = {
