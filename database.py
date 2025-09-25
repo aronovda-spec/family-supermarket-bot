@@ -205,6 +205,50 @@ class Database:
                     )
                 ''')
                 
+                # Templates table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS templates (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        list_type TEXT NOT NULL,
+                        items TEXT NOT NULL,  -- JSON array of items
+                        created_by INTEGER NOT NULL,
+                        is_system_template BOOLEAN DEFAULT FALSE,
+                        usage_count INTEGER DEFAULT 0,
+                        last_used TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (created_by) REFERENCES users(user_id)
+                    )
+                ''')
+                
+                # Template categories table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS template_categories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        list_type TEXT NOT NULL,
+                        created_by INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (created_by) REFERENCES users(user_id)
+                    )
+                ''')
+                
+                # Template usage tracking table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS template_usage (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        template_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        usage_type TEXT NOT NULL,  -- 'load', 'preview', 'customize'
+                        items_added INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (template_id) REFERENCES templates(id),
+                        FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    )
+                ''')
+                
                 conn.commit()
                 logging.info("Database initialized successfully")
                 
@@ -1727,3 +1771,403 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting category by key: {e}")
             return None
+
+    # Template Methods
+    def create_template(self, name: str, description: str, list_type: str, items: List[Dict], 
+                       created_by: int, is_system_template: bool = False) -> Optional[int]:
+        """Create a new template"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO templates (name, description, list_type, items, created_by, is_system_template)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (name, description, list_type, json.dumps(items), created_by, is_system_template))
+                template_id = cursor.lastrowid
+                conn.commit()
+                return template_id
+        except Exception as e:
+            logging.error(f"Error creating template: {e}")
+            return None
+
+    def get_templates_by_list_type(self, list_type: str, user_id: int = None) -> List[Dict]:
+        """Get templates for a specific list type"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                if user_id:
+                    # Get user templates and system templates
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.description, t.items, t.created_by, t.is_system_template,
+                               t.usage_count, t.last_used, t.created_at,
+                               u.username, u.first_name, u.last_name
+                        FROM templates t
+                        LEFT JOIN users u ON t.created_by = u.user_id
+                        WHERE t.list_type = ? AND (t.created_by = ? OR t.is_system_template = TRUE)
+                        ORDER BY t.is_system_template DESC, t.usage_count DESC, t.created_at DESC
+                    ''', (list_type, user_id))
+                else:
+                    # Get all templates
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.description, t.items, t.created_by, t.is_system_template,
+                               t.usage_count, t.last_used, t.created_at,
+                               u.username, u.first_name, u.last_name
+                        FROM templates t
+                        LEFT JOIN users u ON t.created_by = u.user_id
+                        WHERE t.list_type = ?
+                        ORDER BY t.is_system_template DESC, t.usage_count DESC, t.created_at DESC
+                    ''', (list_type,))
+                
+                templates = []
+                for row in cursor.fetchall():
+                    templates.append({
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'items': json.loads(row[3]),
+                        'created_by': row[4],
+                        'is_system_template': row[5],
+                        'usage_count': row[6],
+                        'last_used': row[7],
+                        'created_at': row[8],
+                        'creator_username': row[9],
+                        'creator_first_name': row[10],
+                        'creator_last_name': row[11]
+                    })
+                return templates
+        except Exception as e:
+            logging.error(f"Error getting templates by list type: {e}")
+            return []
+
+    def get_template_by_id(self, template_id: int) -> Optional[Dict]:
+        """Get a specific template by ID"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT t.id, t.name, t.description, t.list_type, t.items, t.created_by, 
+                           t.is_system_template, t.usage_count, t.last_used, t.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM templates t
+                    LEFT JOIN users u ON t.created_by = u.user_id
+                    WHERE t.id = ?
+                ''', (template_id,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'list_type': row[3],
+                        'items': json.loads(row[4]),
+                        'created_by': row[5],
+                        'is_system_template': row[6],
+                        'usage_count': row[7],
+                        'last_used': row[8],
+                        'created_at': row[9],
+                        'creator_username': row[10],
+                        'creator_first_name': row[11],
+                        'creator_last_name': row[12]
+                    }
+                return None
+        except Exception as e:
+            logging.error(f"Error getting template by ID: {e}")
+            return None
+
+    def update_template(self, template_id: int, name: str = None, description: str = None, 
+                       items: List[Dict] = None) -> bool:
+        """Update a template"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                updates = []
+                params = []
+                
+                if name is not None:
+                    updates.append("name = ?")
+                    params.append(name)
+                
+                if description is not None:
+                    updates.append("description = ?")
+                    params.append(description)
+                
+                if items is not None:
+                    updates.append("items = ?")
+                    params.append(json.dumps(items))
+                
+                if not updates:
+                    return False
+                
+                params.append(template_id)
+                cursor.execute(f'''
+                    UPDATE templates 
+                    SET {', '.join(updates)}
+                    WHERE id = ?
+                ''', params)
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error updating template: {e}")
+            return False
+
+    def delete_template(self, template_id: int, user_id: int) -> bool:
+        """Delete a template (only if user is creator or admin)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if user can delete this template
+                cursor.execute('''
+                    SELECT created_by, is_system_template FROM templates WHERE id = ?
+                ''', (template_id,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return False
+                
+                created_by, is_system_template = result
+                
+                # System templates can only be deleted by admins
+                if is_system_template and not self.is_user_admin(user_id):
+                    return False
+                
+                # User templates can only be deleted by creator or admin
+                if not is_system_template and created_by != user_id and not self.is_user_admin(user_id):
+                    return False
+                
+                # Delete template usage records first
+                cursor.execute('DELETE FROM template_usage WHERE template_id = ?', (template_id,))
+                
+                # Delete the template
+                cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error deleting template: {e}")
+            return False
+
+    def increment_template_usage(self, template_id: int, user_id: int, usage_type: str = 'load', 
+                                items_added: int = 0) -> bool:
+        """Increment template usage count and track usage"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Update template usage count and last_used
+                cursor.execute('''
+                    UPDATE templates 
+                    SET usage_count = usage_count + 1, last_used = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (template_id,))
+                
+                # Add usage tracking record
+                cursor.execute('''
+                    INSERT INTO template_usage (template_id, user_id, usage_type, items_added)
+                    VALUES (?, ?, ?, ?)
+                ''', (template_id, user_id, usage_type, items_added))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error incrementing template usage: {e}")
+            return False
+
+    def get_template_usage_stats(self, template_id: int = None) -> List[Dict]:
+        """Get template usage statistics"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                if template_id:
+                    cursor.execute('''
+                        SELECT tu.usage_type, COUNT(*) as count, AVG(tu.items_added) as avg_items,
+                               t.name, u.first_name, u.username
+                        FROM template_usage tu
+                        JOIN templates t ON tu.template_id = t.id
+                        JOIN users u ON tu.user_id = u.user_id
+                        WHERE tu.template_id = ?
+                        GROUP BY tu.usage_type
+                        ORDER BY count DESC
+                    ''', (template_id,))
+                else:
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.list_type, t.usage_count, t.last_used,
+                               COUNT(tu.id) as total_usage, AVG(tu.items_added) as avg_items_added
+                        FROM templates t
+                        LEFT JOIN template_usage tu ON t.id = tu.template_id
+                        GROUP BY t.id
+                        ORDER BY t.usage_count DESC, total_usage DESC
+                    ''')
+                
+                stats = []
+                for row in cursor.fetchall():
+                    if template_id:
+                        stats.append({
+                            'usage_type': row[0],
+                            'count': row[1],
+                            'avg_items': row[2],
+                            'template_name': row[3],
+                            'user_name': row[4] or row[5]
+                        })
+                    else:
+                        stats.append({
+                            'template_id': row[0],
+                            'template_name': row[1],
+                            'list_type': row[2],
+                            'usage_count': row[3],
+                            'last_used': row[4],
+                            'total_usage': row[5],
+                            'avg_items_added': row[6]
+                        })
+                return stats
+        except Exception as e:
+            logging.error(f"Error getting template usage stats: {e}")
+            return []
+
+    def create_template_from_list(self, list_id: int, template_name: str, created_by: int, 
+                                 template_description: str = None) -> Optional[int]:
+        """Create a template from an existing list"""
+        try:
+            import json
+            
+            # Get list items
+            items = self.get_shopping_list_by_id(list_id)
+            if not items:
+                return None
+            
+            # Convert items to template format
+            template_items = []
+            for item in items:
+                template_items.append({
+                    'name': item['name'],
+                    'category': item['category'],
+                    'notes': item['notes']
+                })
+            
+            # Get list type
+            list_info = self.get_list_by_id(list_id)
+            list_type = list_info['list_type'] if list_info else 'custom'
+            
+            # Create template
+            return self.create_template(template_name, template_description, list_type, 
+                                      template_items, created_by)
+        except Exception as e:
+            logging.error(f"Error creating template from list: {e}")
+            return None
+
+    def add_template_items_to_list(self, template_id: int, list_id: int, selected_items: List[str] = None, 
+                                  added_by: int = None) -> int:
+        """Add template items to a list"""
+        try:
+            template = self.get_template_by_id(template_id)
+            if not template:
+                return 0
+            
+            items_added = 0
+            template_items = template['items']
+            
+            # If no specific items selected, add all items
+            if selected_items is None:
+                selected_items = [item['name'] for item in template_items]
+            
+            for item in template_items:
+                if item['name'] in selected_items:
+                    success = self.add_item_to_list(
+                        list_id, 
+                        item['name'], 
+                        item.get('category'), 
+                        item.get('notes'), 
+                        added_by
+                    )
+                    if success:
+                        items_added += 1
+            
+            # Track usage
+            self.increment_template_usage(template_id, added_by, 'load', items_added)
+            
+            return items_added
+        except Exception as e:
+            logging.error(f"Error adding template items to list: {e}")
+            return 0
+
+    def get_user_templates(self, user_id: int) -> List[Dict]:
+        """Get templates created by a specific user"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, name, description, list_type, items, usage_count, last_used, created_at
+                    FROM templates
+                    WHERE created_by = ?
+                    ORDER BY usage_count DESC, created_at DESC
+                ''', (user_id,))
+                
+                templates = []
+                for row in cursor.fetchall():
+                    templates.append({
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'list_type': row[3],
+                        'items': json.loads(row[4]),
+                        'usage_count': row[5],
+                        'last_used': row[6],
+                        'created_at': row[7]
+                    })
+                return templates
+        except Exception as e:
+            logging.error(f"Error getting user templates: {e}")
+            return []
+
+    def get_popular_templates(self, list_type: str = None, limit: int = 10) -> List[Dict]:
+        """Get most popular templates"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                if list_type:
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.description, t.list_type, t.items, t.usage_count, t.last_used,
+                               u.username, u.first_name, u.last_name
+                        FROM templates t
+                        LEFT JOIN users u ON t.created_by = u.user_id
+                        WHERE t.list_type = ?
+                        ORDER BY t.usage_count DESC, t.last_used DESC
+                        LIMIT ?
+                    ''', (list_type, limit))
+                else:
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.description, t.list_type, t.items, t.usage_count, t.last_used,
+                               u.username, u.first_name, u.last_name
+                        FROM templates t
+                        LEFT JOIN users u ON t.created_by = u.user_id
+                        ORDER BY t.usage_count DESC, t.last_used DESC
+                        LIMIT ?
+                    ''', (limit,))
+                
+                templates = []
+                for row in cursor.fetchall():
+                    templates.append({
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'list_type': row[3],
+                        'items': json.loads(row[4]),
+                        'usage_count': row[5],
+                        'last_used': row[6],
+                        'creator_username': row[7],
+                        'creator_first_name': row[8],
+                        'creator_last_name': row[9]
+                    })
+                return templates
+        except Exception as e:
+            logging.error(f"Error getting popular templates: {e}")
+            return []

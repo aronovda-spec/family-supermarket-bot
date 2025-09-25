@@ -441,6 +441,13 @@ class ShoppingBot:
         keyboard = []
         category_items = self.get_category_items(user_id, category_key)
         
+        # Add multi-select option if there are items
+        if category_items:
+            keyboard.append([InlineKeyboardButton(
+                "🎯 Select Multiple Items", 
+                callback_data=f"category_select_{category_key}"
+            )])
+        
         # Add existing items
         for item in category_items:
             keyboard.append([InlineKeyboardButton(
@@ -477,6 +484,23 @@ class ShoppingBot:
         
         keyboard = []
         
+        # Get dynamic items for this custom category
+        category_items = self.get_category_items(user_id, category_key)
+        
+        # Add multi-select option if there are items
+        if category_items:
+            keyboard.append([InlineKeyboardButton(
+                "🎯 Select Multiple Items", 
+                callback_data=f"category_select_{category_key}"
+            )])
+            
+            # Add existing items
+            for item in category_items:
+                keyboard.append([InlineKeyboardButton(
+                    f"✅ {item}", 
+                    callback_data=f"add_item_{category_key}_{item}"
+                )])
+        
         # Custom categories don't have predefined items, so just show the "ADD NEW ITEM" button
         keyboard.append([InlineKeyboardButton(
             self.get_message(user_id, 'btn_add_new_item'),
@@ -490,7 +514,11 @@ class ShoppingBot:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         category_name = self.get_category_name(user_id, category_key)
-        text = f"{custom_category['emoji']} {category_name}\n\nThis is a custom category. Tap ➕ to add new items:"
+        
+        if category_items:
+            text = f"{custom_category['emoji']} {category_name}\n\nTap ✅ to add items to your shopping list:"
+        else:
+            text = f"{custom_category['emoji']} {category_name}\n\nThis is a custom category. Tap ➕ to add new items:"
         
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
@@ -510,6 +538,12 @@ class ShoppingBot:
             return
         
         keyboard = []
+        
+        # Add multi-select option
+        keyboard.append([InlineKeyboardButton(
+            "🎯 Select Multiple Items", 
+            callback_data="recently_select"
+        )])
         
         # Add recent items with usage count
         for item in recent_items:
@@ -937,6 +971,11 @@ class ShoppingBot:
         # Handle category rename
         if context.user_data.get('renaming_category'):
             await self.process_category_rename(update, context, text)
+            return
+        
+        # Handle template creation
+        if context.user_data.get('creating_template'):
+            await self.process_template_creation(update, context, text)
             return
 
     async def process_custom_item_from_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_name: str):
@@ -1487,6 +1526,23 @@ class ShoppingBot:
         elif data.startswith("reject_category_suggestion_"):
             suggestion_id = int(data.replace("reject_category_suggestion_", ""))
             await self.reject_category_suggestion(update, context, suggestion_id)
+        
+        # Category multi-select callback handlers (MUST come before generic category_ handler)
+        elif data.startswith("category_select_"):
+            category_key = data.replace("category_select_", "")
+            logging.info(f"Category select callback - data: '{data}', category_key: '{category_key}'")
+            logging.info(f"About to call show_category_item_selection with category_key: '{category_key}'")
+            await self.show_category_item_selection(update, context, category_key)
+        
+        elif data.startswith("category_toggle_"):
+            parts = data.replace("category_toggle_", "").split("_")
+            category_key = parts[0]
+            item_index = int(parts[1])
+            await self.toggle_category_item_selection(update, context, category_key, item_index)
+        
+        elif data.startswith("category_add_selected_"):
+            category_key = data.replace("category_add_selected_", "")
+            await self.add_selected_category_items(update, context, category_key)
         
         elif data.startswith("category_"):
             category_key = data.replace("category_", "")
@@ -2135,6 +2191,63 @@ class ShoppingBot:
         
         elif data == "maintenance_reset_decline":
             await self.decline_maintenance_reset(update, context)
+        
+        # Template callback handlers
+        elif data.startswith("templates_list_"):
+            list_id = int(data.replace("templates_list_", ""))
+            await self.show_templates_menu(update, context, list_id)
+        
+        elif data.startswith("template_preview_"):
+            parts = data.replace("template_preview_", "").split("_")
+            template_id = int(parts[0])
+            list_id = int(parts[1])
+            await self.show_template_preview(update, context, template_id, list_id)
+        
+        elif data.startswith("template_add_all_"):
+            parts = data.replace("template_add_all_", "").split("_")
+            template_id = int(parts[0])
+            list_id = int(parts[1])
+            await self.add_template_items(update, context, template_id, list_id)
+        
+        elif data.startswith("template_select_"):
+            parts = data.replace("template_select_", "").split("_")
+            template_id = int(parts[0])
+            list_id = int(parts[1])
+            await self.show_template_item_selection(update, context, template_id, list_id)
+        
+        elif data.startswith("template_replace_"):
+            parts = data.replace("template_replace_", "").split("_")
+            template_id = int(parts[0])
+            list_id = int(parts[1])
+            # Reset list first, then add all template items
+            self.db.reset_list(list_id)
+            await self.add_template_items(update, context, template_id, list_id)
+        
+        elif data.startswith("template_toggle_"):
+            parts = data.replace("template_toggle_", "").split("_")
+            template_id = int(parts[0])
+            item_index = int(parts[1])
+            await self.toggle_template_item_selection(update, context, template_id, item_index)
+        
+        elif data.startswith("template_add_selected_"):
+            parts = data.replace("template_add_selected_", "").split("_")
+            template_id = int(parts[0])
+            list_id = int(parts[1])
+            # Get selected items from user data
+            selection_key = f'template_selection_{template_id}'
+            selected_items = context.user_data.get(selection_key, {}).get('selected_items', [])
+            await self.add_template_items(update, context, template_id, list_id, selected_items)
+        
+        elif data.startswith("save_template_"):
+            list_id = int(data.replace("save_template_", ""))
+            await self.save_current_list_as_template(update, context, list_id)
+        
+        elif data.startswith("template_management_"):
+            list_id = int(data.replace("template_management_", ""))
+            await self.show_template_management(update, context, list_id)
+        
+        elif data.startswith("recently_select"):
+            await self.show_category_item_selection(update, context, "recently")
 
     async def process_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                             category_key: str, item_name: str):
@@ -4601,7 +4714,8 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_add_item'), callback_data=f"categories_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_search'), callback_data=f"search_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_id}")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")],
+            [InlineKeyboardButton("📝 Templates", callback_data=f"templates_list_{list_id}")]
         ]
         
         # Add "My Items" for all lists
@@ -6611,6 +6725,507 @@ class ShoppingBot:
                     logging.warning(f"Could not notify user {user['user_id']} about category rename: {e}")
         except Exception as e:
             logging.error(f"Error notifying users about category rename: {e}")
+
+    # Template Methods
+    async def show_templates_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show templates menu for a specific list"""
+        user_id = update.effective_user.id
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        list_type = list_info['list_type']
+        templates = self.db.get_templates_by_list_type(list_type, user_id)
+        
+        if not templates:
+            message = f"📝 **Templates for {list_info['name']}**\n\nNo templates available for this list type yet."
+            keyboard = [[InlineKeyboardButton("🔙 Back to List", callback_data=f"list_menu_{list_id}")]]
+        else:
+            message = f"📝 **Templates for {list_info['name']}**\n\n"
+            message += f"Available templates ({len(templates)}):\n\n"
+            
+            keyboard = []
+            for template in templates[:10]:  # Limit to 10 templates
+                template_name = template['name']
+                item_count = len(template['items'])
+                usage_count = template['usage_count']
+                
+                # Add usage info
+                usage_info = f" ({usage_count} uses)" if usage_count > 0 else ""
+                
+                # System template indicator
+                if template['is_system_template']:
+                    template_name = f"⭐ {template_name}"
+                
+                button_text = f"{template_name} ({item_count} items){usage_info}"
+                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"template_preview_{template['id']}_{list_id}")])
+            
+            # Add template management options
+            keyboard.append([InlineKeyboardButton("💾 Save Current List as Template", callback_data=f"save_template_{list_id}")])
+            keyboard.append([InlineKeyboardButton("⚙️ Template Management", callback_data=f"template_management_{list_id}")])
+            keyboard.append([InlineKeyboardButton("🔙 Back to List", callback_data=f"list_menu_{list_id}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_template_preview(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int, list_id: int):
+        """Show template preview with customization options"""
+        user_id = update.effective_user.id
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template:
+            await update.callback_query.edit_message_text("❌ Template not found.")
+            return
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        # Track preview usage
+        self.db.increment_template_usage(template_id, user_id, 'preview')
+        
+        message = f"📋 **{template['name']}** Template Preview\n\n"
+        if template['description']:
+            message += f"_{template['description']}_\n\n"
+        
+        message += f"Items ({len(template['items'])}):\n"
+        for i, item in enumerate(template['items'], 1):
+            category_info = f" ({item['category']})" if item.get('category') else ""
+            notes_info = f" - {item['notes']}" if item.get('notes') else ""
+            message += f"{i}. {item['name']}{category_info}{notes_info}\n"
+        
+        message += f"\n💡 **Choose how to use this template:**"
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ Add All Items", callback_data=f"template_add_all_{template_id}_{list_id}")],
+            [InlineKeyboardButton("🎯 Select Items", callback_data=f"template_select_{template_id}_{list_id}")],
+            [InlineKeyboardButton("🔄 Replace List", callback_data=f"template_replace_{template_id}_{list_id}")],
+            [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def add_template_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int, list_id: int, selected_items: List[str] = None):
+        """Add template items to a list"""
+        user_id = update.effective_user.id
+        
+        items_added = self.db.add_template_items_to_list(template_id, list_id, selected_items, user_id)
+        
+        list_info = self.db.get_list_by_id(list_id)
+        template = self.db.get_template_by_id(template_id)
+        
+        if items_added > 0:
+            message = f"✅ **Template Applied Successfully!**\n\n"
+            message += f"Added {items_added} items from **{template['name']}** to **{list_info['name']}**.\n\n"
+            
+            if selected_items:
+                message += "Selected items:\n"
+                for item in selected_items:
+                    message += f"• {item}\n"
+            else:
+                message += "All template items were added."
+        else:
+            message = f"⚠️ **No items added**\n\n"
+            message += f"All items from **{template['name']}** already exist in **{list_info['name']}**."
+        
+        keyboard = [
+            [InlineKeyboardButton("📋 View List", callback_data=f"view_list_{list_id}")],
+            [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_template_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int, list_id: int):
+        """Show template item selection interface"""
+        user_id = update.effective_user.id
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template:
+            await update.callback_query.edit_message_text("❌ Template not found.")
+            return
+        
+        # Store template selection state
+        context.user_data[f'template_selection_{template_id}'] = {
+            'template_id': template_id,
+            'list_id': list_id,
+            'selected_items': []
+        }
+        
+        message = f"🎯 **Select Items from {template['name']}**\n\n"
+        message += "Choose which items to add to your list:\n\n"
+        
+        keyboard = []
+        for i, item in enumerate(template['items']):
+            category_info = f" ({item['category']})" if item.get('category') else ""
+            notes_info = f" - {item['notes']}" if item.get('notes') else ""
+            item_text = f"{item['name']}{category_info}{notes_info}"
+            
+            keyboard.append([InlineKeyboardButton(f"☐ {item_text}", callback_data=f"template_toggle_{template_id}_{i}")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("✅ Add Selected Items", callback_data=f"template_add_selected_{template_id}_{list_id}")],
+            [InlineKeyboardButton("🔙 Back to Preview", callback_data=f"template_preview_{template_id}_{list_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def toggle_template_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int, item_index: int):
+        """Toggle item selection in template"""
+        user_id = update.effective_user.id
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template or item_index >= len(template['items']):
+            await update.callback_query.answer("❌ Invalid item selection")
+            return
+        
+        # Get or create selection state
+        selection_key = f'template_selection_{template_id}'
+        if selection_key not in context.user_data:
+            context.user_data[selection_key] = {
+                'template_id': template_id,
+                'list_id': None,
+                'selected_items': []
+            }
+        
+        selected_items = context.user_data[selection_key]['selected_items']
+        item_name = template['items'][item_index]['name']
+        
+        # Toggle selection
+        if item_name in selected_items:
+            selected_items.remove(item_name)
+        else:
+            selected_items.append(item_name)
+        
+        # Update button text
+        item = template['items'][item_index]
+        category_info = f" ({item['category']})" if item.get('category') else ""
+        notes_info = f" - {item['notes']}" if item.get('notes') else ""
+        item_text = f"{item['name']}{category_info}{notes_info}"
+        
+        is_selected = item_name in selected_items
+        button_text = f"{'☑️' if is_selected else '☐'} {item_text}"
+        
+        # Update the specific button
+        keyboard = []
+        for i, template_item in enumerate(template['items']):
+            category_info = f" ({template_item['category']})" if template_item.get('category') else ""
+            notes_info = f" - {template_item['notes']}" if template_item.get('notes') else ""
+            template_item_text = f"{template_item['name']}{category_info}{notes_info}"
+            
+            is_item_selected = template_item['name'] in selected_items
+            button_text = f"{'☑️' if is_item_selected else '☐'} {template_item_text}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"template_toggle_{template_id}_{i}")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("✅ Add Selected Items", callback_data=f"template_add_selected_{template_id}_{context.user_data[selection_key]['list_id']}")],
+            [InlineKeyboardButton("🔙 Back to Preview", callback_data=f"template_preview_{template_id}_{context.user_data[selection_key]['list_id']}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_reply_markup(reply_markup=reply_markup)
+
+    async def save_current_list_as_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Save current list as a template"""
+        user_id = update.effective_user.id
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        items = self.db.get_shopping_list_by_id(list_id)
+        if not items:
+            await update.callback_query.edit_message_text("❌ Cannot save empty list as template.")
+            return
+        
+        # Store template creation state
+        context.user_data['creating_template'] = {
+            'list_id': list_id,
+            'list_name': list_info['name'],
+            'list_type': list_info['list_type'],
+            'items': items
+        }
+        
+        message = f"💾 **Save Template from {list_info['name']}**\n\n"
+        message += f"Current list has {len(items)} items:\n"
+        for item in items[:5]:  # Show first 5 items
+            message += f"• {item['name']}\n"
+        if len(items) > 5:
+            message += f"... and {len(items) - 5} more items\n"
+        
+        message += "\nEnter a name for this template:"
+        
+        # Set waiting state for template creation
+        context.user_data['creating_template'] = True
+        
+        await update.callback_query.edit_message_text(message, parse_mode='Markdown')
+
+    async def show_template_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show template management options"""
+        user_id = update.effective_user.id
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        list_type = list_info['list_type']
+        user_templates = self.db.get_user_templates(user_id)
+        user_templates_for_type = [t for t in user_templates if t['list_type'] == list_type]
+        
+        message = f"⚙️ **Template Management for {list_info['name']}**\n\n"
+        
+        if user_templates_for_type:
+            message += f"Your templates ({len(user_templates_for_type)}):\n"
+            for template in user_templates_for_type:
+                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
+        else:
+            message += "You haven't created any templates for this list type yet.\n"
+        
+        keyboard = []
+        
+        if user_templates_for_type:
+            keyboard.append([InlineKeyboardButton("📊 Template Statistics", callback_data=f"template_stats_{list_id}")])
+            keyboard.append([InlineKeyboardButton("🗑️ Delete My Templates", callback_data=f"template_delete_menu_{list_id}")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def process_template_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_name: str):
+        """Process template creation from user input"""
+        user_id = update.effective_user.id
+        
+        template_data = context.user_data.get('creating_template')
+        if not template_data:
+            await update.message.reply_text("❌ Template creation data not found.")
+            return
+        
+        # Create template
+        template_id = self.db.create_template(
+            name=template_name.strip(),
+            description=f"Template created from {template_data['list_name']}",
+            list_type=template_data['list_type'],
+            items=[{
+                'name': item['name'],
+                'category': item['category'],
+                'notes': item['notes']
+            } for item in template_data['items']],
+            created_by=user_id
+        )
+        
+        if template_id:
+            message = f"✅ **Template Created Successfully!**\n\n"
+            message += f"Template: **{template_name}**\n"
+            message += f"Items: {len(template_data['items'])}\n"
+            message += f"List Type: {template_data['list_type']}\n\n"
+            message += "You can now use this template in the Templates menu!"
+            
+            keyboard = [
+                [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{template_data['list_id']}")],
+                [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{template_data['list_id']}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ Failed to create template. Please try again.")
+        
+        # Clear template creation state
+        context.user_data.pop('creating_template', None)
+
+    # Category Multi-Select Methods
+    async def show_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Show category item selection interface"""
+        user_id = update.effective_user.id
+        
+        logging.info(f"show_category_item_selection called with category_key: '{category_key}'")
+        
+        # Get category items
+        category_items = self.get_category_items(user_id, category_key)
+        logging.info(f"Category items found: {len(category_items) if category_items else 0}")
+        
+        # Debug: Check if category exists in CATEGORIES
+        from config import CATEGORIES
+        logging.info(f"Category '{category_key}' exists in CATEGORIES: {category_key in CATEGORIES}")
+        if category_key in CATEGORIES:
+            logging.info(f"Category data: {CATEGORIES[category_key]}")
+        
+        # Debug: Check if it's a custom category
+        custom_category = self.db.get_custom_category(category_key)
+        logging.info(f"Custom category found: {custom_category is not None}")
+        if custom_category:
+            logging.info(f"Custom category data: {custom_category}")
+        
+        if not category_items:
+            await update.callback_query.edit_message_text("❌ No items available in this category.")
+            return
+        
+        # Store category selection state
+        context.user_data[f'category_selection_{category_key}'] = {
+            'category_key': category_key,
+            'selected_items': []
+        }
+        
+        # Get category name and emoji
+        if category_key == 'recently':
+            category_name = self.get_message(user_id, 'recently_category')
+            category_emoji = "🕒"
+        else:
+            from config import CATEGORIES
+            category_data = CATEGORIES.get(category_key, {})
+            
+            # Check if it's a custom category
+            if not category_data:
+                custom_category = self.db.get_custom_category(category_key)
+                if custom_category:
+                    category_name = self.get_category_name(user_id, category_key)
+                    category_emoji = custom_category['emoji']
+                else:
+                    # Fallback for unknown categories
+                    category_name = category_key
+                    category_emoji = "📦"
+            else:
+                category_name = self.get_category_name(user_id, category_key)
+                category_emoji = category_data.get('emoji', '📦')
+        
+        message = f"🎯 **Select Items from {category_emoji} {category_name}**\n\n"
+        message += "Choose which items to add to your shopping list:\n\n"
+        
+        keyboard = []
+        for i, item in enumerate(category_items):
+            keyboard.append([InlineKeyboardButton(f"☐ {item}", callback_data=f"category_toggle_{category_key}_{i}")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("✅ Add Selected Items", callback_data=f"category_add_selected_{category_key}")],
+            [InlineKeyboardButton("🔙 Back to Category", callback_data=f"category_{category_key}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def toggle_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, item_index: int):
+        """Toggle item selection in category"""
+        user_id = update.effective_user.id
+        
+        # Get category items
+        category_items = self.get_category_items(user_id, category_key)
+        if not category_items or item_index >= len(category_items):
+            await update.callback_query.answer("❌ Invalid item selection")
+            return
+        
+        # Get or create selection state
+        selection_key = f'category_selection_{category_key}'
+        if selection_key not in context.user_data:
+            context.user_data[selection_key] = {
+                'category_key': category_key,
+                'selected_items': []
+            }
+        
+        selected_items = context.user_data[selection_key]['selected_items']
+        item_name = category_items[item_index]
+        
+        # Toggle selection
+        if item_name in selected_items:
+            selected_items.remove(item_name)
+        else:
+            selected_items.append(item_name)
+        
+        # Update button text
+        is_selected = item_name in selected_items
+        button_text = f"{'☑️' if is_selected else '☐'} {item_name}"
+        
+        # Update the specific button
+        keyboard = []
+        for i, category_item in enumerate(category_items):
+            is_item_selected = category_item in selected_items
+            button_text = f"{'☑️' if is_item_selected else '☐'} {category_item}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"category_toggle_{category_key}_{i}")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("✅ Add Selected Items", callback_data=f"category_add_selected_{category_key}")],
+            [InlineKeyboardButton("🔙 Back to Category", callback_data=f"category_{category_key}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_reply_markup(reply_markup=reply_markup)
+
+    async def add_selected_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Add selected category items to the shopping list"""
+        user_id = update.effective_user.id
+        
+        # Get selected items from user data
+        selection_key = f'category_selection_{category_key}'
+        selected_items = context.user_data.get(selection_key, {}).get('selected_items', [])
+        
+        if not selected_items:
+            await update.callback_query.edit_message_text("❌ No items selected.")
+            return
+        
+        # Get target list ID
+        target_list_id = context.user_data.get('target_list_id', 1)  # Default to supermarket list
+        
+        items_added = 0
+        failed_items = []
+        
+        for item_name in selected_items:
+            # Determine category for the item
+            if category_key == 'recently':
+                # For recently used items, we need to find the original category
+                recent_items = self.db.get_recently_used_items()
+                item_category = None
+                for recent_item in recent_items:
+                    if recent_item['name'] == item_name:
+                        item_category = recent_item['category']
+                        break
+            else:
+                item_category = category_key
+            
+            # Add item to list
+            success = self.db.add_item_to_list(target_list_id, item_name, item_category, None, user_id)
+            if success:
+                items_added += 1
+            else:
+                failed_items.append(item_name)
+        
+        # Create success message
+        if items_added > 0:
+            message = f"✅ **Items Added Successfully!**\n\n"
+            message += f"Added {items_added} items to your shopping list.\n\n"
+            
+            if failed_items:
+                message += f"⚠️ Failed to add: {', '.join(failed_items)}\n\n"
+            
+            message += "Selected items:\n"
+            for item in selected_items:
+                if item not in failed_items:
+                    message += f"• {item}\n"
+        else:
+            message = f"❌ **Failed to add items**\n\n"
+            message += "All selected items could not be added to your shopping list."
+        
+        keyboard = [
+            [InlineKeyboardButton("📋 View Shopping List", callback_data=f"view_list_{target_list_id}")],
+            [InlineKeyboardButton("🔙 Back to Category", callback_data=f"category_{category_key}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        
+        # Clear selection state
+        context.user_data.pop(selection_key, None)
 
     def run(self):
         """Run the bot"""
