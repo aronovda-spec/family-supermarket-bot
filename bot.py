@@ -17,7 +17,11 @@ try:
     import speech_recognition as sr
     SPEECH_RECOGNITION_AVAILABLE = True
 except ImportError:
-    SPEECH_RECOGNITION_AVAILABLE = False
+    try:
+        import SpeechRecognition as sr
+        SPEECH_RECOGNITION_AVAILABLE = True
+    except ImportError:
+        SPEECH_RECOGNITION_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -3343,7 +3347,7 @@ class ShoppingBot:
             # Initialize speech recognizer
             recognizer = sr.Recognizer()
             
-            # Try direct recognition first (sometimes works with OGG)
+            # Try direct recognition (works with some OGG files)
             try:
                 audio_io = io.BytesIO(voice_data)
                 with sr.AudioFile(audio_io) as source:
@@ -3371,59 +3375,8 @@ class ShoppingBot:
                                 return None
                                 
             except Exception as e:
-                logging.info(f"Direct recognition failed: {e}")
-                
-                # Try with pydub conversion as fallback
-                try:
-                    from pydub import AudioSegment
-                    import os
-                    
-                    # Add FFmpeg to PATH if not found
-                    ffmpeg_path = r"C:\Users\arono\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-full_build\bin"
-                    if ffmpeg_path not in os.environ.get('PATH', ''):
-                        os.environ['PATH'] = ffmpeg_path + os.pathsep + os.environ.get('PATH', '')
-                    
-                    # Convert bytearray to AudioSegment
-                    audio_segment = AudioSegment.from_ogg(io.BytesIO(voice_data))
-                    
-                    # Convert to WAV format
-                    wav_data = io.BytesIO()
-                    audio_segment.export(wav_data, format="wav")
-                    wav_data.seek(0)
-                    
-                    logging.info("Audio converted from OGG to WAV format")
-                    
-                    # Use speech recognition with WAV data
-                    with sr.AudioFile(wav_data) as source:
-                        audio = recognizer.record(source)
-                        
-                        # Try English first
-                        try:
-                            text = recognizer.recognize_google(audio, language='en-US')
-                            logging.info(f"Voice transcribed (English): {text}")
-                            return text
-                        except sr.UnknownValueError:
-                            # Try Hebrew if English fails
-                            try:
-                                text = recognizer.recognize_google(audio, language='he-IL')
-                                logging.info(f"Voice transcribed (Hebrew): {text}")
-                                return text
-                            except sr.UnknownValueError:
-                                # Try auto-detect
-                                try:
-                                    text = recognizer.recognize_google(audio)
-                                    logging.info(f"Voice transcribed (auto-detect): {text}")
-                                    return text
-                                except sr.UnknownValueError:
-                                    logging.error("Could not understand voice message")
-                                    return None
-                                    
-                except ImportError:
-                    logging.error("pydub library not available for audio conversion")
-                    return None
-                except Exception as e:
-                    logging.error(f"Audio conversion error: {e}")
-                    return None
+                logging.error(f"Voice recognition failed: {e}")
+                return None
                 
         except Exception as e:
             logging.error(f"Voice transcription error: {e}")
