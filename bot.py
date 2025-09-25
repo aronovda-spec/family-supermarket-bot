@@ -706,7 +706,7 @@ class ShoppingBot:
         
         # Handle menu buttons FIRST (to cancel previous operations)
         if (text == self.get_message(user_id, 'btn_supermarket_list') or 
-              text == self.get_message(update.effective_user.id, 'btn_supermarket_list')):
+              text == "🛒 Supermarket List" or text == "🛒 רשימת סופר"):
             await self.supermarket_list_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_new_list') or 
@@ -724,9 +724,6 @@ class ShoppingBot:
         elif (text == self.get_message(user_id, 'btn_manage_lists') or 
               text == "📂 Manage Lists" or text == "📂 נהל רשימות"):
             await self.manage_lists_command(update, context)
-            return
-        elif (text == "⚙️ Admin" or text == "⚙️ מנהל"):
-            await self.show_admin_menu(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_admin_management') or 
               text == "⚙️ Management" or text == "⚙️ ניהול" or
@@ -753,6 +750,10 @@ class ShoppingBot:
         elif (text == self.get_message(user_id, 'btn_search') or 
               text == "🔍🎤 Search" or text == "🔍🎤 חיפוש"):
             await self.search_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_admin') or 
+              text == "⚙️ Admin" or text == "⚙️ מנהל"):
+            await self.show_admin_menu(update, context)
             return
         
         # Handle dynamic list buttons
