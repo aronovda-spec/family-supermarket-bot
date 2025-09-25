@@ -704,6 +704,63 @@ class ShoppingBot:
         text = update.message.text.strip()
         user_id = update.effective_user.id
         
+        # Handle menu buttons FIRST (to cancel previous operations)
+        if (text == self.get_message(user_id, 'btn_supermarket_list') or 
+              text == self.get_message(update.effective_user.id, 'btn_supermarket_list')):
+            await self.supermarket_list_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_new_list') or 
+              text == "➕ New List" or text == "➕ רשימה חדשה"):
+            await self.new_list_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_suggest_category') or 
+              text == "💡 Suggest Category" or text == "💡 הצע קטגוריה"):
+            await self.suggest_category_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_my_lists') or 
+              text == "📋 My Lists" or text == "📋 הרשימות שלי"):
+            await self.my_lists_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_manage_lists') or 
+              text == "📂 Manage Lists" or text == "📂 נהל רשימות"):
+            await self.manage_lists_command(update, context)
+            return
+        elif (text == "⚙️ Admin" or text == "⚙️ מנהל"):
+            await self.show_admin_menu(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_admin_management') or 
+              text == "⚙️ Management" or text == "⚙️ ניהול" or
+              text.startswith(self.get_message(user_id, 'btn_admin_management') + " (") or
+              text.startswith("⚙️ Management (") or text.startswith("⚙️ ניהול (")):
+            await self.show_admin_management_menu(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_user_management') or 
+              text == "👥 Suggestions" or text == "👥 הצעות"):
+            await self.show_user_management_menu(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_language') or 
+              text == "🌐 Language" or text == "🌐 שפה"):
+            await self.language_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_broadcast') or 
+              text == "📢 Broadcast" or text == "📢 שידור"):
+            await self.broadcast_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_help') or 
+              text == "❓ Help" or text == "❓ עזרה"):
+            await self.help_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_search') or 
+              text == "🔍🎤 Search" or text == "🔍🎤 חיפוש"):
+            await self.search_command(update, context)
+            return
+        
+        # Handle dynamic list buttons
+        elif text.startswith("🛒 ") or text.startswith("📋 "):
+            list_name = text[2:]  # Remove emoji prefix
+            await self.show_list_menu(update, context, list_name)
+            return
+        
         # Handle voice search text input
         if context.user_data.get('waiting_for_voice_text'):
             context.user_data.pop('waiting_for_voice_text', None)
@@ -842,47 +899,6 @@ class ShoppingBot:
         # Handle new item translation (admin only)
         if context.user_data.get('waiting_for_new_item_translation'):
             await self.process_new_item_translation(update, context, text)
-            return
-        
-        # Handle multi-list message buttons FIRST (to cancel previous operations)
-        if (text == self.get_message(user_id, 'btn_supermarket_list') or 
-              text == self.get_message(update.effective_user.id, 'btn_supermarket_list')):
-            await self.supermarket_list_command(update, context)
-            return
-        elif (text == self.get_message(user_id, 'btn_new_list') or 
-              text == "➕ New List" or text == "➕ רשימה חדשה"):
-            await self.new_list_command(update, context)
-            return
-        elif (text == self.get_message(user_id, 'btn_suggest_category') or 
-              text == "💡 Suggest Category" or text == "💡 הצע קטגוריה"):
-            await self.suggest_category_command(update, context)
-            return
-        elif (text == self.get_message(user_id, 'btn_my_lists') or 
-              text == "📋 My Lists" or text == "📋 הרשימות שלי"):
-            await self.my_lists_command(update, context)
-            return
-        elif (text == self.get_message(user_id, 'btn_manage_lists') or 
-              text == "📂 Manage Lists" or text == "📂 נהל רשימות"):
-            await self.manage_lists_command(update, context)
-            return
-        elif (text == "⚙️ Admin" or text == "⚙️ מנהל"):
-            await self.show_admin_menu(update, context)
-            return
-        elif (text == self.get_message(user_id, 'btn_admin_management') or 
-              text == "⚙️ Management" or text == "⚙️ ניהול" or
-              text.startswith(self.get_message(user_id, 'btn_admin_management') + " (") or
-              text.startswith("⚙️ Management (") or text.startswith("⚙️ ניהול (")):
-            await self.show_admin_management_menu(update, context)
-            return
-        elif (text == self.get_message(user_id, 'btn_user_management') or 
-              text == "👥 Suggestions" or text == "👥 הצעות"):
-            await self.show_user_management_menu(update, context)
-            return
-        
-        # Handle dynamic list buttons
-        elif text.startswith("🛒 ") or text.startswith("📋 "):
-            list_name = text[2:]  # Remove emoji prefix
-            await self.show_list_menu(update, context, list_name)
             return
         
         # Handle search input (after all button commands)
