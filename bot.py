@@ -1578,6 +1578,7 @@ class ShoppingBot:
                 await self.show_voice_search_prompt(update, context)
             except Exception as e:
                 logging.error(f"Error in voice search: {e}")
+                user_id = update.effective_user.id
                 await update.callback_query.edit_message_text(self.get_message(user_id, 'error_opening_voice_search'))
         
         elif data.startswith("text_search_list_"):
