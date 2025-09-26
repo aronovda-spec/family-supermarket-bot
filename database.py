@@ -979,14 +979,25 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Check if item already exists in this list with the same notes
-                # Items with different notes should be treated as different items
+                # Check if item already exists in this list
+                # Items with numeric notes (quantities) should merge, descriptive notes should stay separate
                 if notes:
-                    # If adding with notes, check for exact match (name + notes)
-                    cursor.execute('''
-                        SELECT id FROM shopping_items 
-                        WHERE list_id = ? AND LOWER(item_name) = LOWER(?) AND notes = ?
-                    ''', (list_id, item_name, notes))
+                    # Check if notes are numeric (quantity) or descriptive
+                    import re
+                    is_numeric_note = re.match(r'^\d+$', notes.strip())
+                    
+                    if is_numeric_note:
+                        # For numeric notes, check for any existing item with same name (merge quantities)
+                        cursor.execute('''
+                            SELECT id FROM shopping_items 
+                            WHERE list_id = ? AND LOWER(item_name) = LOWER(?)
+                        ''', (list_id, item_name))
+                    else:
+                        # For descriptive notes, check for exact match (name + notes)
+                        cursor.execute('''
+                            SELECT id FROM shopping_items 
+                            WHERE list_id = ? AND LOWER(item_name) = LOWER(?) AND notes = ?
+                        ''', (list_id, item_name, notes))
                 else:
                     # If adding without notes, check for items without notes
                     cursor.execute('''
@@ -998,12 +1009,35 @@ class Database:
                 
                 if existing_item:
                     item_id = existing_item[0]
-                    # Add note if provided (for items without notes)
+                    
                     if notes:
-                        cursor.execute('''
-                            INSERT INTO item_notes (item_id, user_id, note)
-                            VALUES (?, ?, ?)
-                        ''', (item_id, added_by, notes))
+                        # Check if we're dealing with numeric notes (quantities)
+                        import re
+                        is_numeric_note = re.match(r'^\d+$', notes.strip())
+                        
+                        if is_numeric_note:
+                            # For numeric notes, update the existing item's notes with combined quantity
+                            cursor.execute('SELECT notes FROM shopping_items WHERE id = ?', (item_id,))
+                            existing_notes = cursor.fetchone()[0]
+                            
+                            if existing_notes and re.match(r'^\d+$', existing_notes.strip()):
+                                # Both are numeric, add quantities
+                                new_quantity = int(existing_notes) + int(notes)
+                                cursor.execute('''
+                                    UPDATE shopping_items SET notes = ? WHERE id = ?
+                                ''', (str(new_quantity), item_id))
+                            else:
+                                # Existing item has no notes or descriptive notes, set quantity
+                                cursor.execute('''
+                                    UPDATE shopping_items SET notes = ? WHERE id = ?
+                                ''', (notes, item_id))
+                        else:
+                            # For descriptive notes, add as separate note
+                            cursor.execute('''
+                                INSERT INTO item_notes (item_id, user_id, note)
+                                VALUES (?, ?, ?)
+                            ''', (item_id, added_by, notes))
+                        
                         conn.commit()
                     return item_id
                 else:
