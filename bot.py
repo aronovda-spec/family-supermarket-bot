@@ -7279,9 +7279,6 @@ class ShoppingBot:
         
         message += "\nEnter a name for this template:"
         
-        # Set waiting state for template creation
-        context.user_data['creating_template'] = True
-        
         await update.callback_query.edit_message_text(message, parse_mode='Markdown')
 
     async def show_template_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
