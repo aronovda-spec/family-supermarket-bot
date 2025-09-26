@@ -979,14 +979,26 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Check if item already exists in this list
-                cursor.execute('SELECT id FROM shopping_items WHERE list_id = ? AND LOWER(item_name) = LOWER(?)', 
-                             (list_id, item_name))
+                # Check if item already exists in this list with the same notes
+                # Items with different notes should be treated as different items
+                if notes:
+                    # If adding with notes, check for exact match (name + notes)
+                    cursor.execute('''
+                        SELECT id FROM shopping_items 
+                        WHERE list_id = ? AND LOWER(item_name) = LOWER(?) AND notes = ?
+                    ''', (list_id, item_name, notes))
+                else:
+                    # If adding without notes, check for items without notes
+                    cursor.execute('''
+                        SELECT id FROM shopping_items 
+                        WHERE list_id = ? AND LOWER(item_name) = LOWER(?) AND (notes IS NULL OR notes = '')
+                    ''', (list_id, item_name))
+                
                 existing_item = cursor.fetchone()
                 
                 if existing_item:
                     item_id = existing_item[0]
-                    # Add note if provided
+                    # Add note if provided (for items without notes)
                     if notes:
                         cursor.execute('''
                             INSERT INTO item_notes (item_id, user_id, note)
