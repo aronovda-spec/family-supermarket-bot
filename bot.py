@@ -2074,6 +2074,24 @@ class ShoppingBot:
             list_id = int(data.replace("remove_individual_", ""))
             await self.show_individual_items_removal(update, context, list_id)
         
+        elif data.startswith("select_multiple_"):
+            list_id = int(data.replace("select_multiple_", ""))
+            await self.show_multiple_items_selection(update, context, list_id)
+        
+        elif data.startswith("toggle_select_"):
+            parts = data.split('_')
+            list_id = int(parts[2])
+            item_id = int(parts[3])
+            await self.toggle_item_selection(update, context, list_id, item_id)
+        
+        elif data.startswith("clear_selection_"):
+            list_id = int(data.replace("clear_selection_", ""))
+            await self.clear_item_selection(update, context, list_id)
+        
+        elif data.startswith("remove_selected_"):
+            list_id = int(data.replace("remove_selected_", ""))
+            await self.remove_selected_items(update, context, list_id)
+        
         elif data.startswith("confirm_remove_category_"):
             parts = data.split('_')
             list_id = int(parts[3])
@@ -4433,10 +4451,14 @@ class ShoppingBot:
                 callback_data=f"remove_category_{list_id}_{category}"
             )])
         
-        # Add individual item removal option
+        # Add individual item removal options
         keyboard.append([InlineKeyboardButton(
             "🔍 Remove Individual Items", 
             callback_data=f"remove_individual_{list_id}"
+        )])
+        keyboard.append([InlineKeyboardButton(
+            "☑️ Select Multiple Items", 
+            callback_data=f"select_multiple_{list_id}"
         )])
         
         # Add back button
@@ -4616,9 +4638,142 @@ class ShoppingBot:
         else:
             await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'remove_item_failed'))
     
+    async def show_multiple_items_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show multiple items selection interface"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        # Get items in the list
+        items = self.db.get_shopping_list_by_id(list_id)
+        
+        if not items:
+            message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove."
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            return
+        
+        # Initialize selected items in user data
+        if 'selected_items' not in context.user_data:
+            context.user_data['selected_items'] = set()
+        
+        message = f"☑️ **{self.get_message(user_id, 'select_multiple_items')} from {list_info['name']}**\n\n"
+        message += self.get_message(user_id, 'select_multiple_instructions') + "\n\n"
+        
+        # Count selected items
+        selected_count = len(context.user_data['selected_items'])
+        if selected_count > 0:
+            message += f"📊 **{self.get_message(user_id, 'items_selected').format(count=selected_count)}**\n\n"
+        
+        keyboard = []
+        
+        # Add items with selection status
+        for item in items:
+            item_id = item['id']
+            is_selected = item_id in context.user_data['selected_items']
+            checkbox = "✅" if is_selected else "☐"
+            item_name = item['name'][:25] + "..." if len(item['name']) > 25 else item['name']
+            
+            keyboard.append([InlineKeyboardButton(
+                f"{checkbox} {item_name}", 
+                callback_data=f"toggle_select_{list_id}_{item_id}"
+            )])
+        
+        # Add action buttons
+        if selected_count > 0:
+            keyboard.append([InlineKeyboardButton(
+                f"🗑️ {self.get_message(user_id, 'remove_selected')} ({selected_count})", 
+                callback_data=f"remove_selected_{list_id}"
+            )])
+            keyboard.append([InlineKeyboardButton(
+                f"🔄 {self.get_message(user_id, 'clear_selection')}", 
+                callback_data=f"clear_selection_{list_id}"
+            )])
+        
+        # Add back button
+        keyboard.append([InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{list_id}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
+    async def toggle_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int, item_id: int):
+        """Toggle item selection in multiple selection mode"""
+        if 'selected_items' not in context.user_data:
+            context.user_data['selected_items'] = set()
+        
+        if item_id in context.user_data['selected_items']:
+            context.user_data['selected_items'].remove(item_id)
+        else:
+            context.user_data['selected_items'].add(item_id)
+        
+        # Refresh the selection interface
+        await self.show_multiple_items_selection(update, context, list_id)
     
+    async def clear_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Clear all selected items"""
+        context.user_data['selected_items'] = set()
+        await self.show_multiple_items_selection(update, context, list_id)
     
+    async def remove_selected_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Remove all selected items"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        selected_items = context.user_data.get('selected_items', set())
+        
+        if not selected_items:
+            await update.callback_query.edit_message_text(f"❌ {self.get_message(user_id, 'no_items_selected')}")
+            return
+        
+        # Get items to remove
+        items = self.db.get_shopping_list_by_id(list_id)
+        items_to_remove = [item for item in items if item['id'] in selected_items]
+        
+        if not items_to_remove:
+            await update.callback_query.edit_message_text(f"❌ {self.get_message(user_id, 'selected_items_not_found')}")
+            return
+        
+        # Remove items
+        removed_count = 0
+        removed_names = []
+        
+        for item in items_to_remove:
+            if self.db.delete_item(item['id']):
+                removed_count += 1
+                removed_names.append(item['name'])
+        
+        # Clear selection
+        context.user_data['selected_items'] = set()
+        
+        # Notify all users about the removal
+        if removed_count > 0:
+            authorized_users = self.db.get_all_authorized_users()
+            for auth_user in authorized_users:
+                try:
+                    user_lang = self.db.get_user_language(auth_user['user_id'])
+                    if user_lang == 'he':
+                        notification = f"🗑️ מנהל הסיר {removed_count} פריטים מהרשימה '{list_info['name']}': {', '.join(removed_names[:3])}{'...' if len(removed_names) > 3 else ''}"
+                    else:
+                        notification = f"🗑️ Admin removed {removed_count} items from '{list_info['name']}' list: {', '.join(removed_names[:3])}{'...' if len(removed_names) > 3 else ''}"
+                    
+                    await self.application.bot.send_message(chat_id=auth_user['user_id'], text=notification)
+                except Exception as e:
+                    logging.error(f"Error sending removal notification to user {auth_user['user_id']}: {e}")
+        
+        # Show success message
+        success_message = f"✅ {self.get_message(user_id, 'successfully_removed_multiple').format(count=removed_count)}"
+        keyboard = [[InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{list_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
     
     async def confirm_delete_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show delete list confirmation (with supermarket list protection)"""
