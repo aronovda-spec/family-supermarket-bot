@@ -4289,7 +4289,7 @@ class ShoppingBot:
                         message += f"\n  📝 {note_info['note']} - {note_info['user_name']}"
                 message += "\n"
         
-        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="my_lists")]]
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
