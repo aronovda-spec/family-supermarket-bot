@@ -388,7 +388,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT si.id, si.item_name, si.category, si.notes, si.created_at
+                    SELECT si.id, si.item_name, si.category, si.notes, si.created_at, si.added_by
                     FROM shopping_items si
                     WHERE si.added_by = ?
                     ORDER BY si.category, si.item_name
@@ -396,7 +396,7 @@ class Database:
                 
                 items = []
                 for row in cursor.fetchall():
-                    item_id, item_name, category, notes, created_at = row
+                    item_id, item_name, category, notes, created_at, added_by = row
                     
                     # Get notes for this item
                     cursor.execute('''
@@ -421,6 +421,7 @@ class Database:
                         'category': category,
                         'notes': notes,
                         'created_at': created_at,
+                        'added_by': added_by,
                         'item_notes': item_notes
                     })
                 
@@ -436,7 +437,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT si.id, si.item_name, si.category, si.notes, si.created_at
+                    SELECT si.id, si.item_name, si.category, si.notes, si.created_at, si.added_by
                     FROM shopping_items si
                     WHERE si.added_by = ? AND si.list_id = ?
                     ORDER BY si.category, si.item_name
@@ -444,7 +445,7 @@ class Database:
                 
                 items = []
                 for row in cursor.fetchall():
-                    item_id, item_name, category, notes, created_at = row
+                    item_id, item_name, category, notes, created_at, added_by = row
                     
                     # Get notes for this item
                     cursor.execute('''
@@ -469,6 +470,7 @@ class Database:
                         'category': category,
                         'notes': notes,
                         'created_at': created_at,
+                        'added_by': added_by,
                         'item_notes': item_notes
                     })
                 
