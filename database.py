@@ -1026,13 +1026,13 @@ class Database:
                                 # Both are numeric, keep the maximum quantity
                                 new_quantity = max(int(existing_notes), int(notes))
                                 cursor.execute('''
-                                    UPDATE shopping_items SET notes = ? WHERE id = ?
-                                ''', (str(new_quantity), item_id))
+                                    UPDATE shopping_items SET notes = ?, added_by = ? WHERE id = ?
+                                ''', (str(new_quantity), added_by, item_id))
                             else:
                                 # Existing item has no notes or descriptive notes, set quantity
                                 cursor.execute('''
-                                    UPDATE shopping_items SET notes = ? WHERE id = ?
-                                ''', (notes, item_id))
+                                    UPDATE shopping_items SET notes = ?, added_by = ? WHERE id = ?
+                                ''', (notes, added_by, item_id))
                         else:
                             # For descriptive notes, add as separate note
                             cursor.execute('''
