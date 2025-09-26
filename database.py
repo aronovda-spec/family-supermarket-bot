@@ -1021,8 +1021,8 @@ class Database:
                             existing_notes = cursor.fetchone()[0]
                             
                             if existing_notes and re.match(r'^\d+$', existing_notes.strip()):
-                                # Both are numeric, add quantities
-                                new_quantity = int(existing_notes) + int(notes)
+                                # Both are numeric, keep the maximum quantity
+                                new_quantity = max(int(existing_notes), int(notes))
                                 cursor.execute('''
                                     UPDATE shopping_items SET notes = ? WHERE id = ?
                                 ''', (str(new_quantity), item_id))
