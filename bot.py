@@ -7345,8 +7345,8 @@ class ShoppingBot:
         keyboard = []
         
         # User template management
+        keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
         if user_templates_for_type:
-            keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
             keyboard.append([InlineKeyboardButton("🗑️ Delete My Templates", callback_data=f"template_delete_menu_{list_id}")])
         
         # Admin system template management
