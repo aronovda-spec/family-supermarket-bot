@@ -137,6 +137,7 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("mylists", self.my_lists_command))
         self.application.add_handler(CommandHandler("managelists", self.manage_lists_command))
         self.application.add_handler(CommandHandler("maintenance", self.maintenance_mode_command))
+        self.application.add_handler(CommandHandler("testmaintenance", self.test_maintenance_notification_command))
         
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
@@ -974,7 +975,7 @@ class ShoppingBot:
             return
         
         # Handle template creation
-        if context.user_data.get('creating_template'):
+        if context.user_data.get('creating_template') or context.user_data.get('creating_system_template'):
             await self.process_template_creation(update, context, text)
             return
 
@@ -2245,6 +2246,61 @@ class ShoppingBot:
         elif data.startswith("template_management_"):
             list_id = int(data.replace("template_management_", ""))
             await self.show_template_management(update, context, list_id)
+        
+        elif data.startswith("system_template_management_"):
+            list_id = int(data.replace("system_template_management_", ""))
+            await self.show_system_template_management(update, context, list_id)
+        
+        elif data.startswith("create_system_template_"):
+            list_id = int(data.replace("create_system_template_", ""))
+            await self.create_system_template_from_list(update, context, list_id)
+        
+        elif data.startswith("edit_system_template_"):
+            template_id = int(data.replace("edit_system_template_", ""))
+            await self.edit_system_template(update, context, template_id)
+        
+        elif data.startswith("delete_system_template_"):
+            template_id = int(data.replace("delete_system_template_", ""))
+            await self.delete_system_template(update, context, template_id)
+        
+        elif data.startswith("confirm_delete_system_template_"):
+            template_id = int(data.replace("confirm_delete_system_template_", ""))
+            await self.confirm_delete_system_template(update, context, template_id)
+        
+        elif data.startswith("template_remove_item_"):
+            parts = data.replace("template_remove_item_", "").split("_")
+            template_id = int(parts[0])
+            item_index = int(parts[1])
+            await self.remove_template_item(update, context, template_id, item_index)
+        
+        elif data.startswith("template_add_items_"):
+            template_id = int(data.replace("template_add_items_", ""))
+            await self.add_items_to_template(update, context, template_id)
+        
+        elif data.startswith("template_save_changes_"):
+            template_id = int(data.replace("template_save_changes_", ""))
+            await self.save_template_changes(update, context, template_id)
+        
+        elif data.startswith("template_cancel_edit_"):
+            template_id = int(data.replace("template_cancel_edit_", ""))
+            await self.cancel_template_edit(update, context, template_id)
+        
+        elif data.startswith("template_category_"):
+            parts = data.replace("template_category_", "").split("_")
+            category_key = parts[0]
+            template_id = int(parts[1])
+            await self.show_template_category_items(update, context, category_key, template_id)
+        
+        elif data.startswith("template_add_item_"):
+            # Parse callback data with pipe separator
+            callback_parts = data.replace("template_add_item_", "").split("|")
+            if len(callback_parts) == 3:
+                category_key = callback_parts[0]
+                item_name = callback_parts[1]
+                template_id = int(callback_parts[2])
+                await self.add_item_to_template(update, context, category_key, item_name, template_id)
+            else:
+                await update.callback_query.edit_message_text("❌ Invalid callback data.")
         
         elif data.startswith("recently_select"):
             await self.show_category_item_selection(update, context, "recently")
@@ -4711,11 +4767,11 @@ class ShoppingBot:
         
         # Create keyboard with list-specific options
         keyboard = [
+            [InlineKeyboardButton("📝 Templates", callback_data=f"templates_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_add_item'), callback_data=f"categories_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_search'), callback_data=f"search_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_id}")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")],
-            [InlineKeyboardButton("📝 Templates", callback_data=f"templates_list_{list_id}")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")]
         ]
         
         # Add "My Items" for all lists
@@ -5531,6 +5587,20 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def test_maintenance_notification_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Test maintenance notification system (admin only)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.message.reply_text("❌ Only admins can test maintenance notifications.")
+            return
+        
+        # Send test notification to all admins
+        await self.send_maintenance_notification_to_admins(context, "Friday", "14:00")
+        
+        message = self.get_message(user_id, 'maintenance_notification_sent')
+        await update.message.reply_text(message)
     
     # Category Creation Methods
     async def new_category_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -6971,6 +7041,7 @@ class ShoppingBot:
     async def show_template_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show template management options"""
         user_id = update.effective_user.id
+        is_admin = self.db.is_user_admin(user_id)
         
         list_info = self.db.get_list_by_id(list_id)
         if not list_info:
@@ -6978,24 +7049,54 @@ class ShoppingBot:
             return
         
         list_type = list_info['list_type']
+        
+        # Get user templates
         user_templates = self.db.get_user_templates(user_id)
         user_templates_for_type = [t for t in user_templates if t['list_type'] == list_type]
         
+        # Get system templates for admins
+        system_templates_for_type = []
+        if is_admin:
+            all_templates = self.db.get_templates_by_list_type(list_type)
+            system_templates_for_type = [t for t in all_templates if t['is_system_template']]
+        
         message = f"⚙️ **Template Management for {list_info['name']}**\n\n"
         
+        # Show user templates
         if user_templates_for_type:
-            message += f"Your templates ({len(user_templates_for_type)}):\n"
+            message += f"📝 **Your Templates** ({len(user_templates_for_type)}):\n"
             for template in user_templates_for_type:
                 usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
                 message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
+            message += "\n"
         else:
-            message += "You haven't created any templates for this list type yet.\n"
+            message += "📝 **Your Templates**: None created yet.\n\n"
+        
+        # Show system templates for admins
+        if is_admin and system_templates_for_type:
+            message += f"🏛️ **System Templates** ({len(system_templates_for_type)}):\n"
+            for template in system_templates_for_type:
+                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                message += f"• {template['name']} ({len(template['items'])} items){usage_info}{creator_info}\n"
+            message += "\n"
+        elif is_admin:
+            message += "🏛️ **System Templates**: None created yet.\n\n"
         
         keyboard = []
         
+        # User template management
         if user_templates_for_type:
-            keyboard.append([InlineKeyboardButton("📊 Template Statistics", callback_data=f"template_stats_{list_id}")])
+            keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
             keyboard.append([InlineKeyboardButton("🗑️ Delete My Templates", callback_data=f"template_delete_menu_{list_id}")])
+        
+        # Admin system template management
+        if is_admin and system_templates_for_type:
+            keyboard.append([InlineKeyboardButton("🏛️ Manage System Templates", callback_data=f"system_template_management_{list_id}")])
+        
+        # Admin can create system templates
+        if is_admin:
+            keyboard.append([InlineKeyboardButton("➕ Create System Template", callback_data=f"create_system_template_{list_id}")])
         
         keyboard.extend([
             [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
@@ -7004,38 +7105,567 @@ class ShoppingBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
+    async def show_system_template_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show system template management for admins"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        list_type = list_info['list_type']
+        all_templates = self.db.get_templates_by_list_type(list_type)
+        system_templates = [t for t in all_templates if t['is_system_template']]
+        
+        message = f"🏛️ **System Template Management for {list_info['name']}**\n\n"
+        
+        if system_templates:
+            message += f"**System Templates** ({len(system_templates)}):\n\n"
+            for template in system_templates:
+                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                created_date = template['created_at'][:10] if template['created_at'] else "Unknown"
+                message += f"**{template['name']}**{usage_info}{creator_info}\n"
+                message += f"• Items: {len(template['items'])}\n"
+                message += f"• Created: {created_date}\n"
+                if template['description']:
+                    message += f"• Description: {template['description']}\n"
+                message += "\n"
+        else:
+            message += "No system templates found for this list type.\n\n"
+        
+        keyboard = []
+        
+        if system_templates:
+            for template in system_templates:
+                keyboard.append([
+                    InlineKeyboardButton(f"✏️ Edit {template['name']}", callback_data=f"edit_system_template_{template['id']}"),
+                    InlineKeyboardButton(f"🗑️ Delete", callback_data=f"delete_system_template_{template['id']}")
+                ])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("➕ Create System Template", callback_data=f"create_system_template_{list_id}")],
+            [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def create_system_template_from_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Create a system template from current list"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        # Get current list items
+        items = self.db.get_shopping_list_by_id(list_id)
+        if not items:
+            await update.callback_query.edit_message_text("❌ List is empty. Cannot create template from empty list.")
+            return
+        
+        # Store template creation data
+        context.user_data['creating_system_template'] = {
+            'list_id': list_id,
+            'list_name': list_info['name'],
+            'list_type': list_info['list_type'],
+            'items': items
+        }
+        
+        message = f"🏛️ **Create System Template from {list_info['name']}**\n\n"
+        message += f"**Current List Items** ({len(items)}):\n"
+        for item in items[:10]:  # Show first 10 items
+            message += f"• {item['name']}"
+            if item['notes']:
+                message += f" ({item['notes']})"
+            message += "\n"
+        
+        if len(items) > 10:
+            message += f"... and {len(items) - 10} more items\n"
+        
+        message += "\n**System templates are available to all users.**\n\n"
+        message += "Please enter a name for this system template:"
+        
+        await update.callback_query.edit_message_text(message, parse_mode='Markdown')
+
+    async def edit_system_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """Edit a system template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template or not template['is_system_template']:
+            await update.callback_query.edit_message_text("❌ System template not found.")
+            return
+        
+        # Store template editing state
+        # Debug: Check template items structure
+        print(f"DEBUG: Template items type: {type(template['items'])}")
+        print(f"DEBUG: Template items: {template['items']}")
+        
+        context.user_data['editing_template'] = {
+            'template_id': template_id,
+            'template_name': template['name'],
+            'list_type': template['list_type'],
+            'current_items': template['items'].copy()
+        }
+        
+        message = f"✏️ **Edit Template: {template['name']}**\n"
+        message += f"Items: {len(template['items'])}\n\n"
+        
+        keyboard = []
+        
+        # Show items with delete buttons (simplified)
+        for i, item in enumerate(template['items']):
+            item_name = item['name'][:25]  # Truncate to 25 chars
+            button_text = f"🗑️ {item_name}"
+            keyboard.append([
+                InlineKeyboardButton(button_text, callback_data=f"template_remove_item_{template_id}_{i}")
+            ])
+        
+        # Add new item options
+        keyboard.extend([
+            [InlineKeyboardButton("➕ Add Items from Categories", callback_data=f"template_add_items_{template_id}")],
+            [InlineKeyboardButton("💾 Save Changes", callback_data=f"template_save_changes_{template_id}")],
+            [InlineKeyboardButton("❌ Cancel Editing", callback_data=f"template_cancel_edit_{template_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Always send a new message to avoid 400 errors
+        try:
+            await update.callback_query.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.callback_query.answer("✅ Template editing")
+        except Exception as e:
+            print(f"ERROR in edit_system_template: {e}")
+            await update.callback_query.answer("❌ Error showing template")
+
+    async def remove_template_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int, item_index: int):
+        """Remove an item from template being edited"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        editing_data = context.user_data.get('editing_template')
+        print(f"DEBUG: Editing data: {editing_data}")
+        print(f"DEBUG: Template ID: {template_id}")
+        print(f"DEBUG: Item index: {item_index}")
+        
+        if not editing_data or editing_data['template_id'] != template_id:
+            # Try to recreate the editing session from the template
+            template = self.db.get_template_by_id(template_id)
+            if template and template['is_system_template']:
+                editing_data = {
+                    'template_id': template_id,
+                    'template_name': template['name'],
+                    'list_type': template['list_type'],
+                    'current_items': template['items'].copy()
+                }
+                context.user_data['editing_template'] = editing_data
+                print(f"DEBUG: Recreated editing session: {editing_data}")
+            else:
+                await update.callback_query.edit_message_text("❌ Template editing session not found.")
+                return
+        
+        # Remove item from current items
+        if 0 <= item_index < len(editing_data['current_items']):
+            removed_item = editing_data['current_items'].pop(item_index)
+            
+            # Update the editing data in context
+            context.user_data['editing_template'] = editing_data
+            
+            # Show confirmation and refresh the edit interface
+            await update.callback_query.answer(f"✅ Removed: {removed_item['name']}")
+            
+            # Send a new message with updated template instead of editing
+            message = f"✏️ **Edit Template: {editing_data['template_name']}**\n"
+            message += f"Items: {len(editing_data['current_items'])}\n\n"
+            
+            keyboard = []
+            
+            # Show remaining items with delete buttons
+            for i, item in enumerate(editing_data['current_items']):
+                item_name = item['name'][:25]  # Truncate to 25 chars
+                button_text = f"🗑️ {item_name}"
+                keyboard.append([
+                    InlineKeyboardButton(button_text, callback_data=f"template_remove_item_{template_id}_{i}")
+                ])
+            
+            # Add new item options
+            keyboard.extend([
+                [InlineKeyboardButton("➕ Add Items from Categories", callback_data=f"template_add_items_{template_id}")],
+                [InlineKeyboardButton("💾 Save Changes", callback_data=f"template_save_changes_{template_id}")],
+                [InlineKeyboardButton("❌ Cancel Editing", callback_data=f"template_cancel_edit_{template_id}")]
+            ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Send new message
+            await update.callback_query.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text("❌ Invalid item index.")
+
+    async def add_items_to_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """Show categories to add items to template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        editing_data = context.user_data.get('editing_template')
+        if not editing_data or editing_data['template_id'] != template_id:
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            return
+        
+        # Store template context for adding items
+        context.user_data['adding_to_template'] = template_id
+        
+        message = f"➕ **Add Items to Template: {editing_data['template_name']}**\n\n"
+        message += f"**Current Items**: {len(editing_data['current_items'])}\n\n"
+        message += "Choose a category to add items from:"
+        
+        keyboard = []
+        
+        # Add predefined categories
+        from config import CATEGORIES
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            emoji = category_data.get('emoji', '📦')
+            keyboard.append([
+                InlineKeyboardButton(f"{emoji} {category_name}", callback_data=f"template_category_{category_key}_{template_id}")
+            ])
+        
+        # Add custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_key = category['category_key']
+            category_name = self.get_category_name(user_id, category_key)
+            emoji = category['emoji']
+            keyboard.append([
+                InlineKeyboardButton(f"{emoji} {category_name}", callback_data=f"template_category_{category_key}_{template_id}")
+            ])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("🔙 Back to Template Edit", callback_data=f"edit_system_template_{template_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def save_template_changes(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """Save changes to template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        editing_data = context.user_data.get('editing_template')
+        if not editing_data or editing_data['template_id'] != template_id:
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            return
+        
+        # Update template in database
+        success = self.db.update_template(
+            template_id=template_id,
+            items=editing_data['current_items']
+        )
+        
+        if success:
+            message = f"✅ **Template Updated Successfully!**\n\n"
+            message += f"Template: **{editing_data['template_name']}**\n"
+            message += f"Items: {len(editing_data['current_items'])}\n"
+            message += f"Type: System Template\n\n"
+            message += "Changes have been saved and are now available to all users."
+            
+            # Get list_id for navigation
+            all_lists = self.db.get_all_lists()
+            matching_lists = [l for l in all_lists if l['list_type'] == editing_data['list_type']]
+            list_id = matching_lists[0]['id'] if matching_lists else 1
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+            # Clear editing state
+            context.user_data.pop('editing_template', None)
+            context.user_data.pop('adding_to_template', None)
+        else:
+            await update.callback_query.edit_message_text("❌ Failed to save template changes. Please try again.")
+
+    async def cancel_template_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """Cancel template editing"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Clear editing state
+        context.user_data.pop('editing_template', None)
+        context.user_data.pop('adding_to_template', None)
+        
+        # Get list_id for navigation
+        template = self.db.get_template_by_id(template_id)
+        if template:
+            all_lists = self.db.get_all_lists()
+            matching_lists = [l for l in all_lists if l['list_type'] == template.get('list_type', 'supermarket')]
+            list_id = matching_lists[0]['id'] if matching_lists else 1
+            
+            message = "❌ **Template editing cancelled.**\n\nNo changes were saved."
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text("❌ Template not found.")
+
+    async def show_template_category_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, template_id: int):
+        """Show category items for adding to template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        editing_data = context.user_data.get('editing_template')
+        if not editing_data or editing_data['template_id'] != template_id:
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            return
+        
+        # Get category items
+        category_items = self.get_category_items(user_id, category_key)
+        if not category_items:
+            await update.callback_query.edit_message_text("❌ No items available in this category.")
+            return
+        
+        category_name = self.get_category_name(user_id, category_key)
+        category_emoji = "📦"
+        
+        # Get emoji for predefined categories
+        from config import CATEGORIES
+        if category_key in CATEGORIES:
+            category_emoji = CATEGORIES[category_key].get('emoji', '📦')
+        else:
+            # Get emoji for custom categories
+            custom_category = self.db.get_custom_category(category_key)
+            if custom_category:
+                category_emoji = custom_category['emoji']
+        
+        message = f"➕ **Add to: {editing_data['template_name']}**\n"
+        message += f"{category_emoji} {category_name} ({len(category_items)} items)\n\n"
+        message += "Tap ✅ to add:"
+        
+        keyboard = []
+        
+        # Show items with add buttons
+        for item in category_items:
+            # Check if item already exists in template
+            item_exists = any(existing_item['name'].lower() == item.lower() for existing_item in editing_data['current_items'])
+            print(f"DEBUG: Checking item '{item}' - exists: {item_exists}")
+            print(f"DEBUG: Current template items: {[i['name'] for i in editing_data['current_items']]}")
+            button_text = f"✅ {item}" if not item_exists else f"🔄 {item} (already added)"
+            # Use a separator that's less likely to appear in item names
+            callback_data = f"template_add_item_{category_key}|{item}|{template_id}"
+            
+            keyboard.append([
+                InlineKeyboardButton(button_text, callback_data=callback_data)
+            ])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("🔙 Back to Add Items", callback_data=f"template_add_items_{template_id}")],
+            [InlineKeyboardButton("🔙 Back to Template Edit", callback_data=f"edit_system_template_{template_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def add_item_to_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str, item_name: str, template_id: int):
+        """Add an item to template being edited"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        editing_data = context.user_data.get('editing_template')
+        if not editing_data or editing_data['template_id'] != template_id:
+            # Try to recreate the editing session from the template
+            template = self.db.get_template_by_id(template_id)
+            if template and template['is_system_template']:
+                editing_data = {
+                    'template_id': template_id,
+                    'template_name': template['name'],
+                    'list_type': template['list_type'],
+                    'current_items': template['items'].copy()
+                }
+                context.user_data['editing_template'] = editing_data
+                print(f"DEBUG: Recreated editing session for add_item: {editing_data}")
+            else:
+                await update.callback_query.edit_message_text("❌ Template editing session not found.")
+                return
+        
+        # Check if item already exists
+        item_exists = any(existing_item['name'].lower() == item_name.lower() for existing_item in editing_data['current_items'])
+        
+        if not item_exists:
+            # Add new item to template
+            new_item = {
+                'name': item_name,
+                'category': category_key,
+                'notes': ''
+            }
+            editing_data['current_items'].append(new_item)
+            
+            # Update the editing data in context
+            context.user_data['editing_template'] = editing_data
+            
+            # Show confirmation and refresh the category items view
+            await update.callback_query.answer(f"✅ Added: {item_name}")
+            
+            # Send new message with updated category items
+            await self.show_template_category_items(update, context, category_key, template_id)
+        else:
+            # Item already exists, just show a brief message
+            await update.callback_query.answer(f"ℹ️ {item_name} is already in the template")
+
+    async def delete_system_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """Delete a system template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template or not template['is_system_template']:
+            await update.callback_query.edit_message_text("❌ System template not found.")
+            return
+        
+        # Confirm deletion
+        message = f"🗑️ **Delete System Template: {template['name']}**\n\n"
+        message += f"**Template Details:**\n"
+        message += f"• Items: {len(template['items'])}\n"
+        message += f"• Usage Count: {template['usage_count']}\n"
+        message += f"• Created: {template['created_at'][:10] if template['created_at'] else 'Unknown'}\n\n"
+        message += "⚠️ **This action cannot be undone!**\n\n"
+        message += "Are you sure you want to delete this system template?"
+        
+        # Get list_id from template's list_type
+        all_lists = self.db.get_all_lists()
+        matching_lists = [l for l in all_lists if l['list_type'] == template.get('list_type', 'supermarket')]
+        list_id = matching_lists[0]['id'] if matching_lists else 1  # Fallback to list 1
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_system_template_{template_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"system_template_management_{list_id}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def confirm_delete_system_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """Confirm deletion of a system template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template or not template['is_system_template']:
+            await update.callback_query.edit_message_text("❌ System template not found.")
+            return
+        
+        # Delete the template
+        success = self.db.delete_template(template_id, user_id)
+        
+        if success:
+            message = f"✅ **System Template Deleted Successfully!**\n\n"
+            message += f"Template: **{template['name']}**\n"
+            message += f"Items: {len(template['items'])}\n"
+            message += f"Usage Count: {template['usage_count']}\n\n"
+            message += "The template has been permanently removed from the system."
+            
+            # Get list_id from template's list_type
+            all_lists = self.db.get_all_lists()
+            matching_lists = [l for l in all_lists if l['list_type'] == template.get('list_type', 'supermarket')]
+            list_id = matching_lists[0]['id'] if matching_lists else 1  # Fallback to list 1
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text("❌ Failed to delete system template. Please try again.")
+
     async def process_template_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_name: str):
         """Process template creation from user input"""
         user_id = update.effective_user.id
         
+        # Check if creating regular template or system template
         template_data = context.user_data.get('creating_template')
-        if not template_data:
+        system_template_data = context.user_data.get('creating_system_template')
+        
+        if not template_data and not system_template_data:
             await update.message.reply_text("❌ Template creation data not found.")
             return
+        
+        # Determine template type
+        is_system_template = system_template_data is not None
+        data = system_template_data if is_system_template else template_data
         
         # Create template
         template_id = self.db.create_template(
             name=template_name.strip(),
-            description=f"Template created from {template_data['list_name']}",
-            list_type=template_data['list_type'],
+            description=f"Template created from {data['list_name']}",
+            list_type=data['list_type'],
             items=[{
                 'name': item['name'],
                 'category': item['category'],
                 'notes': item['notes']
-            } for item in template_data['items']],
-            created_by=user_id
+            } for item in data['items']],
+            created_by=user_id,
+            is_system_template=is_system_template
         )
         
         if template_id:
-            message = f"✅ **Template Created Successfully!**\n\n"
+            template_type = "System Template" if is_system_template else "Template"
+            message = f"✅ **{template_type} Created Successfully!**\n\n"
             message += f"Template: **{template_name}**\n"
-            message += f"Items: {len(template_data['items'])}\n"
-            message += f"List Type: {template_data['list_type']}\n\n"
-            message += "You can now use this template in the Templates menu!"
+            message += f"Items: {len(data['items'])}\n"
+            message += f"List Type: {data['list_type']}\n"
+            if is_system_template:
+                message += f"Type: System Template (available to all users)\n"
+            message += "\nYou can now use this template in the Templates menu!"
             
             keyboard = [
-                [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{template_data['list_id']}")],
-                [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{template_data['list_id']}")]
+                [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{data['list_id']}")],
+                [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -7045,6 +7675,7 @@ class ShoppingBot:
         
         # Clear template creation state
         context.user_data.pop('creating_template', None)
+        context.user_data.pop('creating_system_template', None)
 
     # Category Multi-Select Methods
     async def show_category_item_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
@@ -7227,6 +7858,132 @@ class ShoppingBot:
         # Clear selection state
         context.user_data.pop(selection_key, None)
 
+    async def send_maintenance_notification_to_admins(self, context: ContextTypes.DEFAULT_TYPE, day: str, time: str):
+        """Send maintenance notification to all admins when scheduled time is over"""
+        try:
+            # Get all admin users
+            admins = self.db.get_admin_users()
+            
+            if not admins:
+                logger.warning("No admin users found for maintenance notification")
+                return
+            
+            # Create notification message with reset options
+            for admin in admins:
+                try:
+                    # Get admin's language preference
+                    admin_lang = self.get_user_language(admin['user_id'])
+                    
+                    # Create message based on language
+                    if admin_lang == 'he':
+                        message = self.get_message(admin['user_id'], 'maintenance_time_over').format(day=day, time=time)
+                    else:
+                        message = self.get_message(admin['user_id'], 'maintenance_time_over').format(day=day, time=time)
+                    
+                    # Create inline keyboard with reset options
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "✅ Reset List Now" if admin_lang != 'he' else "✅ אפס רשימה עכשיו",
+                                callback_data="maintenance_reset_confirm"
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "❌ Not Yet" if admin_lang != 'he' else "❌ עדיין לא",
+                                callback_data="maintenance_reset_decline"
+                            )
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    # Send notification to admin
+                    await context.bot.send_message(
+                        chat_id=admin['user_id'],
+                        text=message,
+                        reply_markup=reply_markup
+                    )
+                    
+                    logger.info(f"Maintenance notification sent to admin {admin['user_id']}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to send maintenance notification to admin {admin['user_id']}: {e}")
+            
+            logger.info(f"Maintenance notifications sent to {len(admins)} admins")
+            
+        except Exception as e:
+            logger.error(f"Error sending maintenance notifications: {e}")
+
+    async def check_maintenance_schedule(self, context: ContextTypes.DEFAULT_TYPE):
+        """Check if it's time to send maintenance notifications"""
+        try:
+            # Get active maintenance mode
+            maintenance = self.db.get_maintenance_mode(1)  # Supermarket list
+            
+            if not maintenance:
+                return  # No active maintenance mode
+            
+            # Get current time
+            now = datetime.now()
+            current_day = now.strftime('%A').lower()
+            current_time = now.strftime('%H:%M')
+            
+            # Check if it's the scheduled day and time has passed
+            scheduled_day = maintenance['scheduled_day'].lower()
+            scheduled_time = maintenance['scheduled_time']
+            
+            # Convert day names to lowercase for comparison
+            day_mapping = {
+                'monday': 'monday',
+                'tuesday': 'tuesday', 
+                'wednesday': 'wednesday',
+                'thursday': 'thursday',
+                'friday': 'friday',
+                'saturday': 'saturday',
+                'sunday': 'sunday'
+            }
+            
+            if current_day == day_mapping.get(scheduled_day, scheduled_day):
+                # Check if current time is past scheduled time
+                try:
+                    scheduled_hour, scheduled_minute = map(int, scheduled_time.split(':'))
+                    current_hour, current_minute = map(int, current_time.split(':'))
+                    
+                    scheduled_total_minutes = scheduled_hour * 60 + scheduled_minute
+                    current_total_minutes = current_hour * 60 + current_minute
+                    
+                    # Check if we're past the scheduled time (with 1 minute tolerance)
+                    if current_total_minutes >= scheduled_total_minutes:
+                        # Check if we haven't sent a notification today
+                        last_reminder = maintenance.get('last_reminder')
+                        if last_reminder:
+                            try:
+                                # Handle different datetime formats
+                                if 'T' in last_reminder:
+                                    last_reminder_date = datetime.fromisoformat(last_reminder.replace('Z', '+00:00'))
+                                else:
+                                    last_reminder_date = datetime.fromisoformat(last_reminder)
+                                
+                                if last_reminder_date.date() == now.date():
+                                    return  # Already sent today
+                            except ValueError:
+                                # If we can't parse the date, proceed with sending notification
+                                pass
+                        
+                        # Send notification to admins
+                        await self.send_maintenance_notification_to_admins(context, scheduled_day.title(), scheduled_time)
+                        
+                        # Update reminder timestamp
+                        self.db.update_maintenance_reminder(maintenance['id'])
+                        
+                        logger.info(f"Maintenance notification sent for {scheduled_day} {scheduled_time}")
+                        
+                except ValueError:
+                    logger.error(f"Invalid time format in maintenance schedule: {scheduled_time}")
+                    
+        except Exception as e:
+            logger.error(f"Error checking maintenance schedule: {e}")
+
     def run(self):
         """Run the bot"""
         logger.info("Starting Shopping Bot...")
@@ -7234,6 +7991,16 @@ class ShoppingBot:
         # Set up bot commands menu
         async def post_init(application):
             await self.setup_bot_commands()
+            
+            # Set up maintenance schedule checker
+            job_queue = application.job_queue
+            # Check maintenance schedule every 5 minutes
+            job_queue.run_repeating(
+                self.check_maintenance_schedule,
+                interval=300,  # 5 minutes in seconds
+                first=10  # Start after 10 seconds
+            )
+            logger.info("Maintenance schedule checker started")
         
         self.application.post_init = post_init
         self.application.run_polling()
