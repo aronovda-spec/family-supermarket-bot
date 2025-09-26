@@ -7990,15 +7990,18 @@ class ShoppingBot:
         async def post_init(application):
             await self.setup_bot_commands()
             
-            # Set up maintenance schedule checker
+            # Set up maintenance schedule checker (if JobQueue is available)
             job_queue = application.job_queue
-            # Check maintenance schedule every 30 minutes
-            job_queue.run_repeating(
-                self.check_maintenance_schedule,
-                interval=1800,  # 30 minutes in seconds
-                first=10  # Start after 10 seconds
-            )
-            logger.info("Maintenance schedule checker started")
+            if job_queue is not None:
+                # Check maintenance schedule every 30 minutes
+                job_queue.run_repeating(
+                    self.check_maintenance_schedule,
+                    interval=1800,  # 30 minutes in seconds
+                    first=10  # Start after 10 seconds
+                )
+                logger.info("Maintenance schedule checker started")
+            else:
+                logger.warning("JobQueue not available - maintenance notifications disabled. Install with: pip install python-telegram-bot[job-queue]")
         
         self.application.post_init = post_init
         self.application.run_polling()
