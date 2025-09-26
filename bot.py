@@ -139,11 +139,11 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("maintenance", self.maintenance_mode_command))
         self.application.add_handler(CommandHandler("testmaintenance", self.test_maintenance_notification_command))
         
-        # Add handler for delete commands (delete_11, delete_25, etc.)
-        self.application.add_handler(MessageHandler(filters.Regex(r'^/delete_\d+$'), self.delete_item_command))
-        
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
+        
+        # Add handler for delete commands (delete_11, delete_25, etc.) - BEFORE general text handler
+        self.application.add_handler(MessageHandler(filters.Regex(r'^/delete_\d+$'), self.delete_item_command))
         
         # Message handler for text and voice messages
         self.application.add_handler(MessageHandler((filters.TEXT | filters.VOICE) & ~filters.COMMAND, self.handle_message))
@@ -5606,6 +5606,10 @@ class ShoppingBot:
     async def delete_item_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle delete commands like /delete_11, /delete_25, etc."""
         user_id = update.effective_user.id
+        command_text = update.message.text
+        
+        # Debug logging
+        logging.info(f"Delete command received: {command_text} from user {user_id}")
         
         # Check if user is admin
         if not self.db.is_user_admin(user_id):
@@ -5613,7 +5617,6 @@ class ShoppingBot:
             return
         
         # Extract item ID from command
-        command_text = update.message.text
         try:
             item_id = int(command_text.replace('/delete_', ''))
         except ValueError:
