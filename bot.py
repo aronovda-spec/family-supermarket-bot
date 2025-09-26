@@ -7994,10 +7994,10 @@ class ShoppingBot:
             
             # Set up maintenance schedule checker
             job_queue = application.job_queue
-            # Check maintenance schedule every 5 minutes
+            # Check maintenance schedule every 30 minutes
             job_queue.run_repeating(
                 self.check_maintenance_schedule,
-                interval=300,  # 5 minutes in seconds
+                interval=1800,  # 30 minutes in seconds
                 first=10  # Start after 10 seconds
             )
             logger.info("Maintenance schedule checker started")
