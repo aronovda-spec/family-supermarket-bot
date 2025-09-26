@@ -4822,7 +4822,7 @@ class ShoppingBot:
         items = self.db.get_shopping_list_by_id(list_id)
         
         if not items:
-            message = f"📋 **{list_info['name']}**\n\nNo items in this list yet."
+            message = f"📋 {list_info['name']}\n\nNo items in this list yet."
         else:
             # Group items by category
             categories = {}
@@ -4832,11 +4832,11 @@ class ShoppingBot:
                     categories[category] = []
                 categories[category].append(item)
             
-            message = f"📋 **{list_info['name']}** Summary\n\n"
+            message = f"📋 {list_info['name']} Summary\n\n"
             message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
             
             for category, category_items in categories.items():
-                message += f"**{category}** {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
+                message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
                 for item in category_items:
                     message += f"• {item['name']}"
                     if item['notes']:
@@ -4847,7 +4847,7 @@ class ShoppingBot:
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
     
     async def show_search_for_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show search interface for a specific list with method selection"""
