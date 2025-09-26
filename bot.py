@@ -1369,6 +1369,10 @@ class ShoppingBot:
                 if all_notes:
                     item_text += f"\n  📝 {' | '.join(all_notes)}"
                 
+                # Add delete command for admins or authorized users (for their own items)
+                if self.db.is_user_admin(user_id) or (self.db.is_user_authorized(user_id) and item['added_by'] == user_id):
+                    item_text += f"\n  🗑️ /delete_{item['id']}"
+                
                 message_parts.append(item_text)
 
         full_message = "\n".join(message_parts)
@@ -4287,6 +4291,11 @@ class ShoppingBot:
                 if item['item_notes']:
                     for note_info in item['item_notes']:
                         message += f"\n  📝 {note_info['note']} - {note_info['user_name']}"
+                
+                # Add delete command for admins
+                if self.db.is_user_admin(user_id):
+                    message += f"\n  🗑️ /delete_{item['id']}"
+                
                 message += "\n"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
@@ -5022,6 +5031,11 @@ class ShoppingBot:
                     message += f"• {item['name']}"
                     if item['notes']:
                         message += f" ({item['notes']})"
+                    
+                    # Add delete command for admins
+                    if self.db.is_user_admin(user_id):
+                        message += f"\n  🗑️ /delete_{item['id']}"
+                    
                     message += "\n"
                 message += "\n"
         
@@ -5792,9 +5806,9 @@ class ShoppingBot:
         # Debug logging
         logging.info(f"Delete command received: {command_text} from user {user_id}")
         
-        # Check if user is admin
-        if not self.db.is_user_admin(user_id):
-            await update.message.reply_text("❌ Only admins can delete items.")
+        # Check if user is authorized
+        if not self.db.is_user_authorized(user_id):
+            await update.message.reply_text("❌ You need to be authorized to delete items.")
             return
         
         # Extract item ID from command
@@ -5804,16 +5818,21 @@ class ShoppingBot:
             await update.message.reply_text("❌ Invalid delete command format.")
             return
         
-        # Get item info before deletion for notification
+        # Get item info before deletion for notification and permission check
         try:
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT item_name, category FROM shopping_items WHERE id = ?', (item_id,))
+                cursor.execute('SELECT item_name, category, added_by FROM shopping_items WHERE id = ?', (item_id,))
                 result = cursor.fetchone()
                 if not result:
                     await update.message.reply_text("❌ Item not found.")
                     return
-                item_name, category = result
+                item_name, category, added_by = result
+                
+                # Check permissions: admins can delete any item, users can only delete their own items
+                if not self.db.is_user_admin(user_id) and added_by != user_id:
+                    await update.message.reply_text("❌ You can only delete items that you added.")
+                    return
         except Exception as e:
             logging.error(f"Error getting item info: {e}")
             await update.message.reply_text("❌ Error getting item information.")
