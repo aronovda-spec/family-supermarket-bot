@@ -297,14 +297,40 @@ class ShoppingBot:
         # Create keyboard with list buttons
         keyboard = []
         
-        # Add list buttons (max 2 per row)
-        list_buttons = []
+        # Separate supermarket list from other lists
+        supermarket_list = None
+        other_lists = []
+        
         for list_info in all_lists:
             list_name = list_info['name']
             if list_info['list_type'] == 'supermarket':
-                list_buttons.append(f"🛒 {list_name}")
+                supermarket_list = f"🛒 {list_name}"
             else:
-                list_buttons.append(f"📋 {list_name}")
+                other_lists.append(f"📋 {list_name}")
+        
+        # Get user language to determine positioning
+        user_lang = self.get_user_language(user_id)
+        
+        # Create list buttons with proper positioning
+        list_buttons = []
+        
+        if supermarket_list:
+            if user_lang == 'he':
+                # Hebrew: Supermarket on the right
+                if other_lists:
+                    # Add other lists first, then supermarket
+                    list_buttons.extend(other_lists)
+                    list_buttons.append(supermarket_list)
+                else:
+                    # Only supermarket list
+                    list_buttons.append(supermarket_list)
+            else:
+                # English: Supermarket on the left
+                list_buttons.append(supermarket_list)
+                list_buttons.extend(other_lists)
+        else:
+            # No supermarket list, just add other lists
+            list_buttons.extend(other_lists)
         
         # Add list buttons in rows of 2
         for i in range(0, len(list_buttons), 2):
