@@ -139,6 +139,9 @@ class ShoppingBot:
         self.application.add_handler(CommandHandler("maintenance", self.maintenance_mode_command))
         self.application.add_handler(CommandHandler("testmaintenance", self.test_maintenance_notification_command))
         
+        # Add handler for delete commands (delete_11, delete_25, etc.)
+        self.application.add_handler(MessageHandler(filters.Regex(r'^/delete_\d+$'), self.delete_item_command))
+        
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
         
@@ -5599,6 +5602,48 @@ class ShoppingBot:
         
         message = self.get_message(user_id, 'maintenance_notification_sent')
         await update.message.reply_text(message)
+    
+    async def delete_item_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle delete commands like /delete_11, /delete_25, etc."""
+        user_id = update.effective_user.id
+        
+        # Check if user is admin
+        if not self.db.is_user_admin(user_id):
+            await update.message.reply_text("❌ Only admins can delete items.")
+            return
+        
+        # Extract item ID from command
+        command_text = update.message.text
+        try:
+            item_id = int(command_text.replace('/delete_', ''))
+        except ValueError:
+            await update.message.reply_text("❌ Invalid delete command format.")
+            return
+        
+        # Get item info before deletion for notification
+        try:
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT item_name, category FROM shopping_items WHERE id = ?', (item_id,))
+                result = cursor.fetchone()
+                if not result:
+                    await update.message.reply_text("❌ Item not found.")
+                    return
+                item_name, category = result
+        except Exception as e:
+            logging.error(f"Error getting item info: {e}")
+            await update.message.reply_text("❌ Error getting item information.")
+            return
+        
+        # Delete the item
+        deleted_item_name = self.db.delete_item(item_id)
+        
+        if deleted_item_name:
+            # Notify all users about the deletion
+            await self.notify_item_deletion(item_name, category or 'Unknown')
+            await update.message.reply_text(f"✅ Item '{item_name}' deleted successfully.")
+        else:
+            await update.message.reply_text("❌ Failed to delete item.")
     
     # Category Creation Methods
     async def new_category_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
