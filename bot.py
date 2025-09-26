@@ -4770,12 +4770,10 @@ class ShoppingBot:
             [InlineKeyboardButton("📝 Templates", callback_data=f"templates_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_add_item'), callback_data=f"categories_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_search'), callback_data=f"search_list_{list_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data=f"my_items_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")]
         ]
-        
-        # Add "My Items" for all lists
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data=f"my_items_{list_id}")])
         
         # Add admin-only options (only list-specific functions)
         if self.db.is_user_admin(user_id):
