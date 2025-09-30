@@ -2174,6 +2174,18 @@ class Database:
             logging.error(f"Error getting user templates: {e}")
             return []
 
+    def get_list_id_by_type(self, list_type: str) -> Optional[int]:
+        """Get list_id by list_type"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM lists WHERE list_type = ?', (list_type,))
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except Exception as e:
+            logging.error(f"Error getting list_id by type: {e}")
+            return None
+
     def get_popular_templates(self, list_type: str = None, limit: int = 10) -> List[Dict]:
         """Get most popular templates"""
         try:
