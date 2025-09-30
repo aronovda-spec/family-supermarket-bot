@@ -2362,7 +2362,7 @@ class ShoppingBot:
             if last_underscore != -1:
                 category_key = callback_data[:last_underscore]
                 template_id = int(callback_data[last_underscore + 1:])
-                await self.show_template_category_items(update, context, category_key, template_id)
+            await self.show_template_category_items(update, context, category_key, template_id)
             else:
                 logging.error(f"Invalid template_category callback data: {data}")
                 await update.callback_query.answer("❌ Invalid callback data")
@@ -7491,11 +7491,11 @@ class ShoppingBot:
             current_items = editing_state['current_items']
         else:
             # Load template from database
-            template = self.db.get_template_by_id(template_id)
-            if not template or not template['is_system_template']:
-                await update.callback_query.edit_message_text("❌ System template not found.")
-                return
-            
+        template = self.db.get_template_by_id(template_id)
+        if not template or not template['is_system_template']:
+            await update.callback_query.edit_message_text("❌ System template not found.")
+            return
+        
             template_name = template['name']
             current_items = template['items'].copy()
             
@@ -7581,36 +7581,36 @@ class ShoppingBot:
             # Update the editing data in context
             context.user_data['editing_template'] = editing_data
             
-            # Show confirmation and refresh the edit interface
-            await update.callback_query.answer(f"✅ Removed: {removed_item['name']}")
-            
-            # Send a new message with updated template instead of editing
-            message = f"✏️ **Edit Template: {editing_data['template_name']}**\n"
-            message += f"Items: {len(editing_data['current_items'])}\n\n"
-            
-            keyboard = []
-            
-            # Show remaining items with delete buttons
-            for i, item in enumerate(editing_data['current_items']):
-                item_name = item['name'][:25]  # Truncate to 25 chars
-                button_text = f"🗑️ {item_name}"
-                keyboard.append([
-                    InlineKeyboardButton(button_text, callback_data=f"template_remove_item_{template_id}_{i}")
-                ])
-            
-            # Add new item options
-            keyboard.extend([
-                [InlineKeyboardButton("➕ Add Items from Categories", callback_data=f"template_add_items_{template_id}")],
-                [InlineKeyboardButton("💾 Save Changes", callback_data=f"template_save_changes_{template_id}")],
-                [InlineKeyboardButton("❌ Cancel Editing", callback_data=f"template_cancel_edit_{template_id}")]
+        # Show confirmation and refresh the edit interface
+        await update.callback_query.answer(f"✅ Removed: {removed_item['name']}")
+        
+        # Send a new message with updated template instead of editing
+        message = f"✏️ **Edit Template: {editing_data['template_name']}**\n"
+        message += f"Items: {len(editing_data['current_items'])}\n\n"
+        
+        keyboard = []
+        
+        # Show remaining items with delete buttons
+        for i, item in enumerate(editing_data['current_items']):
+            item_name = item['name'][:25]  # Truncate to 25 chars
+            button_text = f"🗑️ {item_name}"
+            keyboard.append([
+                InlineKeyboardButton(button_text, callback_data=f"template_remove_item_{template_id}_{i}")
             ])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Send new message
-            await update.callback_query.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-        else:
-            await update.callback_query.edit_message_text("❌ Invalid item index.")
+        
+        # Add new item options
+        keyboard.extend([
+            [InlineKeyboardButton("➕ Add Items from Categories", callback_data=f"template_add_items_{template_id}")],
+            [InlineKeyboardButton("💾 Save Changes", callback_data=f"template_save_changes_{template_id}")],
+            [InlineKeyboardButton("❌ Cancel Editing", callback_data=f"template_cancel_edit_{template_id}")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send new message
+        await update.callback_query.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.callback_query.edit_message_text("❌ Invalid item index.")
 
     async def add_items_to_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
         """Show categories to add items to template"""
@@ -7624,9 +7624,9 @@ class ShoppingBot:
                 # Check permissions based on template type
                 if template['is_system_template']:
                     # System template - admin only
-                    if not self.db.is_user_admin(user_id):
-                        await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
-                        return
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
                 else:
                     # User template - owner only
                     if template['created_by'] != user_id:
@@ -7641,7 +7641,7 @@ class ShoppingBot:
                 }
                 context.user_data['editing_template'] = editing_data
             else:
-                await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
             return
         
         # Store template context for adding items
@@ -7677,9 +7677,9 @@ class ShoppingBot:
         is_system = template['is_system_template'] if template else True
         
         if is_system:
-            keyboard.extend([
-                [InlineKeyboardButton("🔙 Back to Template Edit", callback_data=f"edit_system_template_{template_id}")]
-            ])
+        keyboard.extend([
+            [InlineKeyboardButton("🔙 Back to Template Edit", callback_data=f"edit_system_template_{template_id}")]
+        ])
         else:
             keyboard.extend([
                 [InlineKeyboardButton("🔙 Back to Template Edit", callback_data=f"edit_user_template_{template_id}")]
@@ -7700,9 +7700,9 @@ class ShoppingBot:
                 # Check permissions based on template type
                 if template['is_system_template']:
                     # System template - admin only
-                    if not self.db.is_user_admin(user_id):
-                        await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
-                        return
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
                 else:
                     # User template - owner only
                     if template['created_by'] != user_id:
@@ -7717,7 +7717,7 @@ class ShoppingBot:
                 }
                 context.user_data['editing_template'] = editing_data
             else:
-                await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
             return
         
         # Update template in database
@@ -7737,7 +7737,7 @@ class ShoppingBot:
             message += f"Type: {'System Template' if is_system else 'User Template'}\n\n"
             
             if is_system:
-                message += "Changes have been saved and are now available to all users."
+            message += "Changes have been saved and are now available to all users."
             else:
                 message += "Changes have been saved to your personal template."
             
@@ -7745,8 +7745,8 @@ class ShoppingBot:
             list_id = self.db.get_list_id_by_type(editing_data['list_type'])
             
             if is_system:
-                keyboard = [
-                    [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
             ]
             else:
                 keyboard = [
@@ -7780,9 +7780,9 @@ class ShoppingBot:
             message = "❌ **Template editing cancelled.**\n\nNo changes were saved."
             
             if is_system:
-                keyboard = [
-                    [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
-                ]
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+            ]
             else:
                 keyboard = [
                     [InlineKeyboardButton("🔙 Back to Manage My Templates", callback_data=f"manage_my_templates_{list_id}")]
@@ -7806,9 +7806,9 @@ class ShoppingBot:
                 # Check permissions based on template type
                 if template['is_system_template']:
                     # System template - admin only
-                    if not self.db.is_user_admin(user_id):
-                        await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
-                        return
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
                 else:
                     # User template - owner only
                     if template['created_by'] != user_id:
@@ -7823,7 +7823,7 @@ class ShoppingBot:
                 }
                 context.user_data['editing_template'] = editing_data
             else:
-                await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
             return
         
         # Get category items
@@ -7930,8 +7930,8 @@ class ShoppingBot:
             context.user_data['editing_template'] = editing_data
             
             # Show confirmation and return to template edit view
-            await update.callback_query.answer(f"✅ Added: {item_name}")
-            
+        await update.callback_query.answer(f"✅ Added: {item_name}")
+        
             # Get template info to determine the correct edit method
             template = self.db.get_template_by_id(template_id)
             is_system = template['is_system_template'] if template else True
@@ -7940,9 +7940,9 @@ class ShoppingBot:
                 await self.edit_system_template(update, context, template_id)
             else:
                 await self.edit_user_template(update, context, template_id)
-        else:
-            # Item already exists, just show a brief message
-            await update.callback_query.answer(f"ℹ️ {item_name} is already in the template")
+    else:
+        # Item already exists, just show a brief message
+        await update.callback_query.answer(f"ℹ️ {item_name} is already in the template")
 
     async def delete_system_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
         """Delete a system template"""
