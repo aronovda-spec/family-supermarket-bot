@@ -480,32 +480,142 @@ class Database:
             logging.error(f"Error getting items by user in list: {e}")
             return []
 
-    def delete_item(self, item_id: int) -> Optional[str]:
-        """Delete an item from the shopping list"""
+    def delete_item(self, item_id) -> Optional[str]:
+        """Delete an item from the shopping list (handles both regular and dynamic items)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Get item name before deletion
-                cursor.execute('SELECT item_name FROM shopping_items WHERE id = ?', (item_id,))
-                result = cursor.fetchone()
-                if not result:
-                    return None
-                
-                item_name = result[0]
-                
-                # Delete item notes first
-                cursor.execute('DELETE FROM item_notes WHERE item_id = ?', (item_id,))
-                
-                # Delete the item
-                cursor.execute('DELETE FROM shopping_items WHERE id = ?', (item_id,))
-                conn.commit()
-                
-                return item_name
+                # Check if it's a dynamic item ID
+                if isinstance(item_id, str) and item_id.startswith("dynamic_"):
+                    # Extract the actual ID from the dynamic item format
+                    actual_id = item_id.replace("dynamic_", "")
+                    cursor.execute('SELECT item_name_en FROM dynamic_category_items WHERE id = ?', (actual_id,))
+                    result = cursor.fetchone()
+                    if not result:
+                        return None
+                    item_name = result[0]
+                    cursor.execute('DELETE FROM dynamic_category_items WHERE id = ?', (actual_id,))
+                    conn.commit()
+                    return item_name
+                else:
+                    # Regular item from shopping_items table
+                    cursor.execute('SELECT item_name FROM shopping_items WHERE id = ?', (item_id,))
+                    result = cursor.fetchone()
+                    if not result:
+                        return None
+                    item_name = result[0]
+                    
+                    # Delete item notes first
+                    cursor.execute('DELETE FROM item_notes WHERE item_id = ?', (item_id,))
+                    
+                    # Delete the item
+                    cursor.execute('DELETE FROM shopping_items WHERE id = ?', (item_id,))
+                    conn.commit()
+                    
+                    return item_name
                 
         except Exception as e:
             logging.error(f"Error deleting item: {e}")
             return None
+
+    def get_item_by_id(self, item_id) -> Optional[Dict]:
+        """Get an item by its ID (handles both regular and dynamic items)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if it's a dynamic item ID
+                if isinstance(item_id, str) and item_id.startswith("dynamic_"):
+                    # Extract the actual ID from the dynamic item format
+                    actual_id = item_id.replace("dynamic_", "")
+                    cursor.execute('''
+                        SELECT id, item_name_en, category_key, created_at
+                        FROM dynamic_category_items 
+                        WHERE id = ?
+                    ''', (actual_id,))
+                    result = cursor.fetchone()
+                    if not result:
+                        return None
+                    return {
+                        'id': f"dynamic_{result[0]}",
+                        'name': result[1],
+                        'category': result[2],
+                        'is_permanent': True,
+                        'created_at': result[3]
+                    }
+                else:
+                    # Regular item from shopping_items table
+                    cursor.execute('''
+                        SELECT id, item_name, category, created_at
+                        FROM shopping_items 
+                        WHERE id = ?
+                    ''', (item_id,))
+                    result = cursor.fetchone()
+                    if not result:
+                        return None
+                    return {
+                        'id': result[0],
+                        'name': result[1],
+                        'category': result[2],
+                        'is_permanent': False,
+                        'created_at': result[3]
+                    }
+                
+        except Exception as e:
+            logging.error(f"Error getting item by ID: {e}")
+            return None
+
+    def get_items_by_category(self, category_key: str) -> List[Dict]:
+        """Get all items in a specific category (both permanent and non-permanent)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                items = []
+                
+                # Get non-permanent items from shopping_items table
+                cursor.execute('''
+                    SELECT id, item_name, category, created_at
+                    FROM shopping_items 
+                    WHERE category = ?
+                    ORDER BY item_name
+                ''', (category_key,))
+                
+                for row in cursor.fetchall():
+                    items.append({
+                        'id': row[0],
+                        'name': row[1],
+                        'category': row[2],
+                        'is_permanent': False,  # Items in shopping_items are not permanent
+                        'created_at': row[3]
+                    })
+                
+                # Get permanent items from dynamic_category_items table
+                cursor.execute('''
+                    SELECT id, item_name_en, category_key, created_at
+                    FROM dynamic_category_items 
+                    WHERE category_key = ?
+                    ORDER BY item_name_en
+                ''', (category_key,))
+                
+                for row in cursor.fetchall():
+                    items.append({
+                        'id': f"dynamic_{row[0]}",  # Use a different ID format for dynamic items
+                        'name': row[1],
+                        'category': row[2],
+                        'is_permanent': True,  # Items in dynamic_category_items are permanent
+                        'created_at': row[3]
+                    })
+                
+                # Sort all items by name
+                items.sort(key=lambda x: x['name'])
+                
+                return items
+                
+        except Exception as e:
+            logging.error(f"Error getting items by category: {e}")
+            return []
 
     def reset_shopping_list(self) -> bool:
         """Reset the supermarket shopping list"""
