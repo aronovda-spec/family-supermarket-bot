@@ -1847,25 +1847,25 @@ class Database:
                 cursor = conn.cursor()
                 
                 if user_id:
-                    # Get user templates and system templates
+                    # Get user templates for this list type and ALL system templates
                     cursor.execute('''
                         SELECT t.id, t.name, t.description, t.items, t.created_by, t.is_system_template,
                                t.usage_count, t.last_used, t.created_at,
                                u.username, u.first_name, u.last_name
                         FROM templates t
                         LEFT JOIN users u ON t.created_by = u.user_id
-                        WHERE t.list_type = ? AND (t.created_by = ? OR t.is_system_template = TRUE)
+                        WHERE (t.list_type = ? AND t.created_by = ?) OR t.is_system_template = TRUE
                         ORDER BY t.is_system_template DESC, t.usage_count DESC, t.created_at DESC
                     ''', (list_type, user_id))
                 else:
-                    # Get all templates
+                    # Get user templates for this list type and ALL system templates
                     cursor.execute('''
                         SELECT t.id, t.name, t.description, t.items, t.created_by, t.is_system_template,
                                t.usage_count, t.last_used, t.created_at,
                                u.username, u.first_name, u.last_name
                         FROM templates t
                         LEFT JOIN users u ON t.created_by = u.user_id
-                        WHERE t.list_type = ?
+                        WHERE t.list_type = ? OR t.is_system_template = TRUE
                         ORDER BY t.is_system_template DESC, t.usage_count DESC, t.created_at DESC
                     ''', (list_type,))
                 
