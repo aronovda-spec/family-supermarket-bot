@@ -352,6 +352,7 @@ class ShoppingBot:
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_admin')), KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         elif self.db.is_user_authorized(user_id):
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_user_management'))])
+            keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_manage_my_lists'))])
             keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_broadcast'))])
         
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_language'))])
@@ -804,6 +805,10 @@ class ShoppingBot:
         elif (text == self.get_message(user_id, 'btn_user_management') or 
               text == "👥 Suggestions" or text == "👥 הצעות"):
             await self.show_user_management_menu(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_manage_my_lists') or 
+              text == "📂 Manage My Lists" or text == "📂 נהל את הרשימות שלי"):
+            await self.show_manage_my_lists(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_language') or 
               text == "🌐 Language" or text == "🌐 שפה"):
@@ -4291,6 +4296,53 @@ class ShoppingBot:
             await update.message.reply_text(message, reply_markup=reply_markup)
         elif update.callback_query:
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def show_manage_my_lists(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show user's own lists for management"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_authorized(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'not_registered'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'not_registered'))
+            return
+        
+        user_lists = self.db.get_user_lists(user_id)
+        
+        if not user_lists:
+            message = "📂 **Manage My Lists**\n\nYou haven't created any lists yet.\n\nUse 'New List' to create your first list!"
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]]
+        else:
+            message = "📂 **Manage My Lists**\n\nYour lists (both personal and shared):"
+            keyboard = []
+            
+            for list_info in user_lists:
+                # Get item count for this list
+                items = self.db.get_shopping_list_by_id(list_info['id'])
+                item_count = len(items)
+                
+                # Format list info with type indicator
+                list_type_indicator = "👤" if list_info['list_type'] == 'personal' else "🌐"
+                
+                if list_info['description']:
+                    list_text = f"{list_type_indicator} {list_info['name']} ({item_count} items)\n📝 {list_info['description']}"
+                else:
+                    list_text = f"{list_type_indicator} {list_info['name']} ({item_count} items)"
+                
+                keyboard.append([InlineKeyboardButton(
+                    list_text,
+                    callback_data=f"list_actions_{list_info['id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def show_list_actions(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show actions for a specific list"""
