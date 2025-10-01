@@ -7741,12 +7741,12 @@ class ShoppingBot:
             current_items = template['items'].copy()
             
             # Store template editing state
-        context.user_data['editing_template'] = {
-            'template_id': template_id,
+            context.user_data['editing_template'] = {
+                'template_id': template_id,
                 'template_name': template_name,
-            'list_type': template['list_type'],
+                'list_type': template['list_type'],
                 'current_items': current_items
-        }
+            }
         
         message = f"✏️ **Edit Template: {template_name}**\n"
         message += f"Items: {len(current_items)}\n\n"
