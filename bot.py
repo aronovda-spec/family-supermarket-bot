@@ -37,13 +37,6 @@ try:
 except ImportError:
     FFMPEG_AVAILABLE = False
 
-# Try to import PyAudio for microphone support
-try:
-    import pyaudio
-    PYAUDIO_AVAILABLE = True
-except ImportError:
-    PYAUDIO_AVAILABLE = False
-
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
