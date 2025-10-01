@@ -2028,6 +2028,10 @@ class ShoppingBot:
             list_id = int(data.replace("list_actions_", ""))
             await self.show_list_actions(update, context, list_id)
         
+        elif data.startswith("view_list_"):
+            list_name = data.replace("view_list_", "")
+            await self.show_list_menu(update, context, list_name)
+        
         elif data.startswith("edit_list_name_"):
             list_id = int(data.replace("edit_list_name_", ""))
             await self.show_edit_list_name(update, context, list_id)
@@ -4224,7 +4228,7 @@ class ShoppingBot:
             for list_info in personal_lists:
                 keyboard.append([InlineKeyboardButton(
                     f"📋 {list_info['name']}",
-                    callback_data=f"list_actions_{list_info['id']}"
+                    callback_data=f"view_list_{list_info['name']}"
                 )])
             
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")])
