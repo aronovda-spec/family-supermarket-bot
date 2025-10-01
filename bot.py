@@ -5651,7 +5651,7 @@ class ShoppingBot:
                 message = "❌ לא נמצאו רשימות."
                 back_to_management_text = "🔙 חזור לניהול"
             else:
-            message = "❌ No lists found."
+                message = "❌ No lists found."
                 back_to_management_text = self.get_message(user_id, 'btn_back_to_management')
             keyboard = [[InlineKeyboardButton(back_to_management_text, callback_data="admin_management")]]
         else:
