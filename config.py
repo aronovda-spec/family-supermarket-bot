@@ -45,32 +45,32 @@ CATEGORIES = {
         'emoji': '🥛',
         'name': {'en': 'Dairy', 'he': 'חלבי'},
         'items': {
-            'en': ['Milk', 'Cheese', 'Yogurt', 'Butter', 'Cream', 'Eggs'],
-            'he': ['חלב', 'גבינה', 'יוגורט', 'חמאה', 'שמנת', 'ביצים']
+            'en': ['Milk', 'Cheese', 'Yogurt', 'Butter', 'Cream', 'Eggs', 'Cottage cheese', 'Sour cream', 'Cream cheese', 'Buttermilk'],
+            'he': ['חלב', 'גבינה', 'יוגורט', 'חמאה', 'שמנת', 'ביצים', 'גבינת קוטג\'', 'שמנת חמוצה', 'גבינת שמנת', 'חלב חמאה']
         }
     },
     'fruits_vegetables': {
         'emoji': '🥦🍎',
         'name': {'en': 'Fruits & Vegetables', 'he': 'פירות וירקות'},
         'items': {
-            'en': ['Apples', 'Bananas', 'Carrots', 'Broccoli', 'Tomatoes', 'Onions', 'Potatoes', 'Lettuce'],
-            'he': ['תפוחים', 'בננות', 'גזר', 'ברוקולי', 'עגבניות', 'בצל', 'תפוחי אדמה', 'חסה']
+            'en': ['Apples', 'Bananas', 'Carrots', 'Broccoli', 'Tomatoes', 'Onions', 'Potatoes', 'Lettuce', 'Avocado', 'Cucumber', 'Bell peppers', 'Mushrooms', 'Spinach', 'Strawberries', 'Grapes', 'Oranges', 'Lemons'],
+            'he': ['תפוחים', 'בננות', 'גזר', 'ברוקולי', 'עגבניות', 'בצל', 'תפוחי אדמה', 'חסה', 'אבוקדו', 'מלפפון', 'פלפלים', 'פטריות', 'תרד', 'תותים', 'ענבים', 'תפוזים', 'לימונים']
         }
     },
     'meat_fish': {
         'emoji': '🍗🐟',
         'name': {'en': 'Meat & Fish', 'he': 'בשר ודגים'},
         'items': {
-            'en': ['Chicken', 'Beef', 'Pork', 'Salmon', 'Tuna', 'Ground meat'],
-            'he': ['עוף', 'בקר', 'חזיר', 'סלמון', 'טונה', 'בשר טחון']
+            'en': ['Chicken', 'Beef', 'Pork', 'Salmon', 'Tuna', 'Ground meat', 'Turkey', 'Lamb', 'Shrimp', 'Cod', 'Sardines', 'Bacon', 'Sausages'],
+            'he': ['עוף', 'בקר', 'חזיר', 'סלמון', 'טונה', 'בשר טחון', 'הודו', 'כבש', 'חסילונים', 'בקלה', 'סרדינים', 'בייקון', 'נקניקיות']
         }
     },
     'staples': {
         'emoji': '🍞🍝',
         'name': {'en': 'Staples', 'he': 'מוצרי יסוד'},
         'items': {
-            'en': ['Bread', 'Pasta', 'Rice', 'Flour', 'Cereal', 'Oats'],
-            'he': ['לחם', 'פסטה', 'אורז', 'קמח', 'דגנים', 'שיבולת שועל']
+            'en': ['Bread', 'Pasta', 'Rice', 'Flour', 'Cereal', 'Oats', 'Quinoa', 'Couscous', 'Barley', 'Tortillas', 'Crackers', 'Granola'],
+            'he': ['לחם', 'פסטה', 'אורז', 'קמח', 'דגנים', 'שיבולת שועל', 'קינואה', 'קוסקוס', 'שעורה', 'טורטיות', 'קרקרים', 'גרנולה']
         }
     },
     'snacks': {
@@ -93,8 +93,8 @@ CATEGORIES = {
         'emoji': '🥤',
         'name': {'en': 'Beverages', 'he': 'משקאות'},
         'items': {
-            'en': ['Coffee', 'Tea', 'Juice', 'Soda', 'Water', 'Beer', 'Wine'],
-            'he': ['קפה', 'תה', 'מיץ', 'משקה מוגז', 'מים', 'בירה', 'יין']
+            'en': ['Coffee', 'Tea', 'Juice', 'Soda', 'Water', 'Beer', 'Wine', 'Energy drinks', 'Sports drinks', 'Sparkling water', 'Kombucha', 'Hot chocolate'],
+            'he': ['קפה', 'תה', 'מיץ', 'משקה מוגז', 'מים', 'בירה', 'יין', 'משקאות אנרגיה', 'משקאות ספורט', 'מים מוגזים', 'קומבוצ\'ה', 'שוקולד חם']
         }
     },
     'frozen': {
@@ -109,8 +109,8 @@ CATEGORIES = {
         'emoji': '🧂',
         'name': {'en': 'Condiments & Spices', 'he': 'תבלינים ורטבים'},
         'items': {
-            'en': ['Salt', 'Pepper', 'Ketchup', 'Mustard', 'Olive oil', 'Vinegar', 'Garlic', 'Herbs'],
-            'he': ['מלח', 'פלפל', 'קטשופ', 'חרדל', 'שמן זית', 'חומץ', 'שום', 'עשבי תיבול']
+            'en': ['Salt', 'Pepper', 'Ketchup', 'Mustard', 'Olive oil', 'Vinegar', 'Garlic', 'Herbs', 'Soy sauce', 'Hot sauce', 'Worcestershire sauce', 'Sesame oil', 'Cumin', 'Paprika', 'Cinnamon'],
+            'he': ['מלח', 'פלפל', 'קטשופ', 'חרדל', 'שמן זית', 'חומץ', 'שום', 'עשבי תיבול', 'רוטב סויה', 'רוטב חריף', 'רוטב ווסטרשייר', 'שמן שומשום', 'כמון', 'פפריקה', 'קינמון']
         }
     },
     'baby_pet': {
@@ -133,8 +133,64 @@ CATEGORIES = {
         'emoji': '🥐',
         'name': {'en': 'Bakery', 'he': 'מאפייה'},
         'items': {
-            'en': ['Fresh bread', 'Croissants', 'Muffins', 'Bagels', 'Donuts'],
-            'he': ['לחם טרי', 'קרואסון', 'מאפינס', 'בייגלים', 'סופגניות']
+            'en': ['Fresh bread', 'Croissants', 'Muffins', 'Bagels', 'Donuts', 'Cake', 'Cookies', 'Pie', 'Pastries', 'Rolls'],
+            'he': ['לחם טרי', 'קרואסון', 'מאפינס', 'בייגלים', 'סופגניות', 'עוגה', 'עוגיות', 'פאי', 'מאפים', 'לחמניות']
+        }
+    },
+    'prepared_foods': {
+        'emoji': '🍕',
+        'name': {'en': 'Prepared Foods', 'he': 'מזון מוכן'},
+        'items': {
+            'en': ['Ready meals', 'Sandwiches', 'Salads', 'Sushi', 'Pizza', 'Pasta dishes', 'Soup', 'Deli items'],
+            'he': ['ארוחות מוכנות', 'כריכים', 'סלטים', 'סושי', 'פיצה', 'מנות פסטה', 'מרק', 'מוצרי דלי']
+        }
+    },
+    'deli': {
+        'emoji': '🧀',
+        'name': {'en': 'Deli', 'he': 'דלי'},
+        'items': {
+            'en': ['Cold cuts', 'Sliced cheese', 'Prepared salads', 'Olives', 'Hummus', 'Tzatziki', 'Pickles', 'Antipasti'],
+            'he': ['נקניקים', 'גבינה פרוסה', 'סלטים מוכנים', 'זיתים', 'חומוס', 'צזיקי', 'חמוצים', 'אנטיפסטי']
+        }
+    },
+    'international': {
+        'emoji': '🌮',
+        'name': {'en': 'International', 'he': 'בינלאומי'},
+        'items': {
+            'en': ['Asian foods', 'Mexican foods', 'Indian spices', 'Mediterranean', 'Middle Eastern', 'Italian specialties', 'Thai ingredients', 'Chinese sauces'],
+            'he': ['מזון אסייתי', 'מזון מקסיקני', 'תבלינים הודיים', 'ים תיכוני', 'מזרח תיכוני', 'מעדנים איטלקיים', 'מרכיבים תאילנדיים', 'רטבים סיניים']
+        }
+    },
+    'home_garden': {
+        'emoji': '🏠',
+        'name': {'en': 'Home & Garden', 'he': 'בית וגינה'},
+        'items': {
+            'en': ['Tools', 'Plants', 'Seeds', 'Fertilizer', 'Pots', 'Garden supplies', 'Light bulbs', 'Batteries'],
+            'he': ['כלים', 'צמחים', 'זרעים', 'דשן', 'עציצים', 'אספקת גינה', 'נורות', 'סוללות']
+        }
+    },
+    'personal_care': {
+        'emoji': '👕',
+        'name': {'en': 'Personal Care', 'he': 'טיפוח אישי'},
+        'items': {
+            'en': ['Cosmetics', 'Toiletries', 'Personal hygiene', 'Skincare', 'Hair care', 'Oral care', 'Deodorant', 'Razors'],
+            'he': ['קוסמטיקה', 'מוצרי טואלט', 'היגיינה אישית', 'טיפוח עור', 'טיפוח שיער', 'טיפוח פה', 'דאודורנט', 'סכיני גילוח']
+        }
+    },
+    'electronics': {
+        'emoji': '📱',
+        'name': {'en': 'Electronics', 'he': 'אלקטרוניקה'},
+        'items': {
+            'en': ['Batteries', 'Cables', 'Chargers', 'Small electronics', 'Phone accessories', 'USB drives', 'Memory cards', 'Headphones'],
+            'he': ['סוללות', 'כבלים', 'מטענים', 'אלקטרוניקה קטנה', 'אביזרי טלפון', 'דיסק און קי', 'כרטיסי זיכרון', 'אוזניות']
+        }
+    },
+    'gifts_cards': {
+        'emoji': '🎁',
+        'name': {'en': 'Gifts & Cards', 'he': 'מתנות וכרטיסים'},
+        'items': {
+            'en': ['Gift cards', 'Wrapping paper', 'Greeting cards', 'Balloons', 'Party supplies', 'Candles', 'Decorative items', 'Toys'],
+            'he': ['כרטיסי מתנה', 'נייר עטיפה', 'כרטיסי ברכה', 'בלונים', 'אספקת מסיבות', 'נרות', 'פריטי קישוט', 'צעצועים']
         }
     }
 }
@@ -536,7 +592,14 @@ For support, contact your family admin.""",
         'btn_rename_items': "✏️ Rename Items",
         'btn_delete_items': "🗑️ Delete Items",
         'btn_new_category': "📂 New Category",
-        'btn_rename_categories': "✏️ Rename Categories"
+        'btn_rename_categories': "✏️ Rename Categories",
+        # Additional translations for hard-coded strings
+        'search_again': "Search Again",
+        'restore_original_item': "Restore Original Item",
+        'supermarket_list_name': "Supermarket List",
+        'weekly_family_shopping_list': "Weekly family shopping list",
+        'friday': "Friday",
+        'unknown': "Unknown"
     },
     'he': {
         'welcome': "🛒 ברוכים הבאים לבוט רשימת הקניות המשפחתית!\n\nהבוט עוזר לנהל את רשימת הקניות השבועית עם המשפחה.\n\nהשתמש ב-/help כדי לראות את כל הפקודות.",
@@ -915,6 +978,13 @@ For support, contact your family admin.""",
         'btn_rename_items': "✏️ שנה שמות פריטים",
         'btn_delete_items': "🗑️ מחק פריטים",
         'btn_new_category': "📂 קטגוריה חדשה",
-        'btn_rename_categories': "✏️ שנה שמות קטגוריות"
+        'btn_rename_categories': "✏️ שנה שמות קטגוריות",
+        # Additional translations for hard-coded strings
+        'search_again': "חפש שוב",
+        'restore_original_item': "שחזר פריט מקורי",
+        'supermarket_list_name': "רשימת סופר",
+        'weekly_family_shopping_list': "רשימת קניות משפחתית שבועית",
+        'friday': "יום שישי",
+        'unknown': "לא ידוע"
     }
 }

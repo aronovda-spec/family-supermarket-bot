@@ -1647,7 +1647,7 @@ class ShoppingBot:
                 await self.process_category_item_selection(update, context, category_key, item_name)
         
         elif data.startswith("restore_item_"):
-            # Handle "Restore Original Item" from restoration options
+            # Handle restore original item from restoration options
             parts = data.replace("restore_item_", "").split("_", 1)
             if len(parts) == 2:
                 category_key, item_name = parts
@@ -5311,7 +5311,7 @@ class ShoppingBot:
             other_lists = []
             
             for list_info in lists:
-                if "Supermarket" in list_info['name'] or "סופר" in list_info['name']:
+                if self.get_message(user_id, 'supermarket_list_name') in list_info['name'] or "סופר" in list_info['name']:
                     supermarket_list = list_info
                 else:
                     other_lists.append(list_info)
@@ -5458,6 +5458,7 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_new_item'), callback_data="new_item_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_rename_items'), callback_data="rename_items_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_delete_items'), callback_data="delete_items_admin")],
+            [InlineKeyboardButton("🗑️ Delete Permanent Items", callback_data="delete_permanent_items")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]
         ]
         
@@ -6032,7 +6033,7 @@ class ShoppingBot:
             return
         
         # Send test notification to all admins
-        await self.send_maintenance_notification_to_admins(context, "Friday", "14:00")
+        await self.send_maintenance_notification_to_admins(context, self.get_message(user_id, 'friday'), "14:00")
         
         message = self.get_message(user_id, 'maintenance_notification_sent')
         await update.message.reply_text(message)
@@ -7307,7 +7308,7 @@ class ShoppingBot:
             message += f"Available templates ({len(templates)}):\n\n"
             
             keyboard = []
-            for template in templates[:10]:  # Limit to 10 templates
+            for template in templates:  # Show all templates
                 template_name = template['name']
                 item_count = len(template['items'])
                 usage_count = template['usage_count']
@@ -7692,7 +7693,7 @@ class ShoppingBot:
             for template in system_templates:
                 usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
                 creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                created_date = template['created_at'][:10] if template['created_at'] else "Unknown"
+                created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
                 message += f"**{template['name']}**{usage_info}{creator_info}\n"
                 message += f"• Items: {len(template['items'])}\n"
                 message += f"• Created: {created_date}\n"
@@ -7738,7 +7739,7 @@ class ShoppingBot:
             for template in system_templates:
                 usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
                 creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                created_date = template['created_at'][:10] if template['created_at'] else "Unknown"
+                created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
                 list_type_info = f" for {template['list_type']}" if template['list_type'] else ""
                 message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
                 message += f"• Items: {len(template['items'])}\n"
@@ -8868,7 +8869,7 @@ class ShoppingBot:
         
         for template in user_templates:
             usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-            created_date = template['created_at'][:10] if template['created_at'] else "Unknown"
+            created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
             
             message += f"**{template['name']}**{usage_info}\n"
             message += f"• List Type: {template['list_type']}\n"

@@ -250,10 +250,363 @@ class Database:
                 ''')
                 
                 conn.commit()
+                
+                # Create default system templates
+                self.create_default_templates()
+                
                 logging.info("Database initialized successfully")
                 
         except Exception as e:
             logging.error(f"Error initializing database: {e}")
+
+    def create_default_templates(self):
+        """Create default system templates if they don't exist"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if we already have system templates
+                cursor.execute('SELECT COUNT(*) FROM templates WHERE is_system_template = TRUE')
+                existing_count = cursor.fetchone()[0]
+                
+                # Get admin user ID for template creation
+                cursor.execute('SELECT user_id FROM users WHERE is_admin = TRUE LIMIT 1')
+                admin_user = cursor.fetchone()
+                if not admin_user:
+                    logging.warning("No admin user found for template creation")
+                    return
+                
+                admin_user_id = admin_user[0]
+                
+                if existing_count > 0:
+                    logging.info(f"System templates already exist ({existing_count} found)")
+                    # Still create missing templates
+                    self.create_missing_templates(cursor, admin_user_id)
+                    return
+                
+                # Define default templates
+                default_templates = [
+                    # Supermarket Templates
+                    {
+                        'name': 'Weekly Groceries',
+                        'description': 'Standard weekly shopping essentials',
+                        'list_type': 'supermarket',
+                        'items': ['Milk', 'Bread', 'Eggs', 'Cheese', 'Yogurt', 'Apples', 'Bananas', 'Carrots', 'Onions', 'Potatoes', 'Chicken', 'Ground meat', 'Rice', 'Pasta', 'Cereal', 'Coffee', 'Tea']
+                    },
+                    {
+                        'name': 'Breakfast Essentials',
+                        'description': 'Everything needed for breakfast',
+                        'list_type': 'supermarket',
+                        'items': ['Milk', 'Cereal', 'Oats', 'Bread', 'Butter', 'Jam', 'Eggs', 'Coffee', 'Tea', 'Orange juice', 'Yogurt', 'Fruits']
+                    },
+                    {
+                        'name': 'Dinner Party',
+                        'description': 'Ingredients for hosting dinner guests',
+                        'list_type': 'supermarket',
+                        'items': ['Wine', 'Cheese', 'Olives', 'Bread', 'Salmon', 'Beef', 'Vegetables', 'Herbs', 'Olive oil', 'Vinegar', 'Dessert', 'Coffee']
+                    },
+                    {
+                        'name': 'BBQ/Grill',
+                        'description': 'Everything for a barbecue',
+                        'list_type': 'supermarket',
+                        'items': ['Chicken', 'Beef', 'Pork', 'Sausages', 'Bacon', 'Bread', 'Ketchup', 'Mustard', 'BBQ sauce', 'Charcoal', 'Vegetables', 'Beer', 'Soda']
+                    },
+                    {
+                        'name': 'Kids Lunch',
+                        'description': 'School lunch items and snacks',
+                        'list_type': 'supermarket',
+                        'items': ['Bread', 'Cheese', 'Ham', 'Yogurt', 'Fruits', 'Juice boxes', 'Crackers', 'Cookies', 'Nuts', 'Granola bars']
+                    },
+                    {
+                        'name': 'Vegetarian Week',
+                        'description': 'Plant-based meal ingredients',
+                        'list_type': 'supermarket',
+                        'items': ['Tofu', 'Beans', 'Lentils', 'Quinoa', 'Vegetables', 'Fruits', 'Nuts', 'Seeds', 'Olive oil', 'Herbs', 'Rice', 'Pasta']
+                    },
+                    {
+                        'name': 'Budget Shopping',
+                        'description': 'Essential items for tight budgets',
+                        'list_type': 'supermarket',
+                        'items': ['Rice', 'Pasta', 'Beans', 'Potatoes', 'Onions', 'Carrots', 'Eggs', 'Milk', 'Bread', 'Oats', 'Bananas', 'Ground meat']
+                    },
+                    
+                    # Pharmacy Templates
+                    {
+                        'name': 'First Aid Kit',
+                        'description': 'Essential first aid supplies',
+                        'list_type': 'pharmacy',
+                        'items': ['Bandages', 'Antiseptic', 'Pain relievers', 'Thermometer', 'Gauze', 'Medical tape', 'Scissors', 'Tweezers']
+                    },
+                    {
+                        'name': 'Cold & Flu',
+                        'description': 'Medicine and supplies for cold and flu',
+                        'list_type': 'pharmacy',
+                        'items': ['Pain relievers', 'Cough syrup', 'Throat lozenges', 'Tissues', 'Nasal spray', 'Vitamins', 'Tea', 'Honey']
+                    },
+                    {
+                        'name': 'Baby Care',
+                        'description': 'Essential baby care items',
+                        'list_type': 'pharmacy',
+                        'items': ['Diapers', 'Baby formula', 'Baby food', 'Baby wipes', 'Baby shampoo', 'Baby lotion', 'Thermometer', 'Pacifiers']
+                    },
+                    
+                    # Home Templates
+                    {
+                        'name': 'New Home',
+                        'description': 'Basic household essentials for new home',
+                        'list_type': 'home',
+                        'items': ['Toilet paper', 'Paper towels', 'Detergent', 'Soap', 'Shampoo', 'Toothpaste', 'Light bulbs', 'Batteries', 'Cleaning supplies']
+                    },
+                    {
+                        'name': 'Home Office',
+                        'description': 'Supplies for remote work',
+                        'list_type': 'home',
+                        'items': ['Notebooks', 'Pens', 'Pencils', 'Stapler', 'Paper clips', 'Folders', 'Printer paper', 'Ink cartridges']
+                    },
+                    {
+                        'name': 'Garden Setup',
+                        'description': 'Tools and supplies for gardening',
+                        'list_type': 'home',
+                        'items': ['Seeds', 'Fertilizer', 'Pots', 'Garden tools', 'Watering can', 'Gloves', 'Soil', 'Plant markers']
+                    },
+                    
+                    # Special Occasion Templates
+                    {
+                        'name': 'Birthday Party',
+                        'description': 'Everything for a birthday celebration',
+                        'list_type': 'gifts_cards',
+                        'items': ['Balloons', 'Candles', 'Cake', 'Party decorations', 'Gift wrapping', 'Party favors', 'Soda', 'Snacks']
+                    },
+                    {
+                        'name': 'Wedding Shower',
+                        'description': 'Items for wedding shower celebration',
+                        'list_type': 'gifts_cards',
+                        'items': ['Gift wrapping', 'Greeting cards', 'Decorations', 'Candles', 'Party supplies', 'Gifts', 'Flowers', 'Champagne']
+                    },
+                    
+                    # Travel Templates
+                    {
+                        'name': 'Beach Vacation',
+                        'description': 'Essentials for beach vacation',
+                        'list_type': 'travel',
+                        'items': ['Sunscreen', 'Beach towels', 'Swimwear', 'Sunglasses', 'Hat', 'Snacks', 'Water', 'Beach toys']
+                    },
+                    {
+                        'name': 'Camping Trip',
+                        'description': 'Food and supplies for camping',
+                        'list_type': 'travel',
+                        'items': ['Canned food', 'Water', 'Snacks', 'Coffee', 'Tea', 'Matches', 'Flashlight', 'Batteries', 'First aid kit']
+                    },
+                    {
+                        'name': 'Road Trip',
+                        'description': 'Snacks and supplies for road travel',
+                        'list_type': 'travel',
+                        'items': ['Snacks', 'Water', 'Soda', 'Coffee', 'Maps', 'Phone charger', 'Music', 'Games', 'Blankets']
+                    },
+                    
+                    # Lifestyle Templates
+                    {
+                        'name': 'Fitness/Workout',
+                        'description': 'Supplies for fitness and workout',
+                        'list_type': 'personal_care',
+                        'items': ['Protein powder', 'Energy bars', 'Water bottle', 'Workout clothes', 'Sneakers', 'Towel', 'Headphones', 'Fitness tracker']
+                    },
+                    {
+                        'name': 'Meal Prep',
+                        'description': 'Containers and ingredients for weekly meal prep',
+                        'list_type': 'supermarket',
+                        'items': ['Meal containers', 'Rice', 'Chicken', 'Vegetables', 'Quinoa', 'Beans', 'Olive oil', 'Herbs', 'Spices']
+                    }
+                ]
+                
+                # Insert templates
+                for template in default_templates:
+                    cursor.execute('''
+                        INSERT INTO templates (name, description, list_type, items, created_by, is_system_template, usage_count)
+                        VALUES (?, ?, ?, ?, ?, TRUE, 0)
+                    ''', (
+                        template['name'],
+                        template['description'],
+                        template['list_type'],
+                        json.dumps(template['items']),
+                        admin_user_id
+                    ))
+                
+                conn.commit()
+                logging.info(f"Created {len(default_templates)} default system templates")
+                
+        except Exception as e:
+            logging.error(f"Error creating default templates: {e}")
+
+    def create_missing_templates(self, cursor, admin_user_id):
+        """Create missing templates that don't already exist"""
+        try:
+            import json
+            
+            # Get existing template names
+            cursor.execute('SELECT name FROM templates WHERE is_system_template = TRUE')
+            existing_names = {row[0] for row in cursor.fetchall()}
+            
+            # Define missing templates
+            missing_templates = [
+                # Supermarket Templates
+                {
+                    'name': 'Weekly Groceries',
+                    'description': 'Standard weekly shopping essentials',
+                    'list_type': 'supermarket',
+                    'items': ['Milk', 'Bread', 'Eggs', 'Cheese', 'Yogurt', 'Apples', 'Bananas', 'Carrots', 'Onions', 'Potatoes', 'Chicken', 'Ground meat', 'Rice', 'Pasta', 'Cereal', 'Coffee', 'Tea']
+                },
+                {
+                    'name': 'Breakfast Essentials',
+                    'description': 'Everything needed for breakfast',
+                    'list_type': 'supermarket',
+                    'items': ['Milk', 'Cereal', 'Oats', 'Bread', 'Butter', 'Jam', 'Eggs', 'Coffee', 'Tea', 'Orange juice', 'Yogurt', 'Fruits']
+                },
+                {
+                    'name': 'Dinner Party',
+                    'description': 'Ingredients for hosting dinner guests',
+                    'list_type': 'supermarket',
+                    'items': ['Wine', 'Cheese', 'Olives', 'Bread', 'Salmon', 'Beef', 'Vegetables', 'Herbs', 'Olive oil', 'Vinegar', 'Dessert', 'Coffee']
+                },
+                {
+                    'name': 'BBQ/Grill',
+                    'description': 'Everything for a barbecue',
+                    'list_type': 'supermarket',
+                    'items': ['Chicken', 'Beef', 'Pork', 'Sausages', 'Bacon', 'Bread', 'Ketchup', 'Mustard', 'BBQ sauce', 'Charcoal', 'Vegetables', 'Beer', 'Soda']
+                },
+                {
+                    'name': 'Kids Lunch',
+                    'description': 'School lunch items and snacks',
+                    'list_type': 'supermarket',
+                    'items': ['Bread', 'Cheese', 'Ham', 'Yogurt', 'Fruits', 'Juice boxes', 'Crackers', 'Cookies', 'Nuts', 'Granola bars']
+                },
+                {
+                    'name': 'Vegetarian Week',
+                    'description': 'Plant-based meal ingredients',
+                    'list_type': 'supermarket',
+                    'items': ['Tofu', 'Beans', 'Lentils', 'Quinoa', 'Vegetables', 'Fruits', 'Nuts', 'Seeds', 'Olive oil', 'Herbs', 'Rice', 'Pasta']
+                },
+                {
+                    'name': 'Budget Shopping',
+                    'description': 'Essential items for tight budgets',
+                    'list_type': 'supermarket',
+                    'items': ['Rice', 'Pasta', 'Beans', 'Potatoes', 'Onions', 'Carrots', 'Eggs', 'Milk', 'Bread', 'Oats', 'Bananas', 'Ground meat']
+                },
+                
+                # Pharmacy Templates
+                {
+                    'name': 'First Aid Kit',
+                    'description': 'Essential first aid supplies',
+                    'list_type': 'pharmacy',
+                    'items': ['Bandages', 'Antiseptic', 'Pain relievers', 'Thermometer', 'Gauze', 'Medical tape', 'Scissors', 'Tweezers']
+                },
+                {
+                    'name': 'Cold & Flu',
+                    'description': 'Medicine and supplies for cold and flu',
+                    'list_type': 'pharmacy',
+                    'items': ['Pain relievers', 'Cough syrup', 'Throat lozenges', 'Tissues', 'Nasal spray', 'Vitamins', 'Tea', 'Honey']
+                },
+                {
+                    'name': 'Baby Care',
+                    'description': 'Essential baby care items',
+                    'list_type': 'pharmacy',
+                    'items': ['Diapers', 'Baby formula', 'Baby food', 'Baby wipes', 'Baby shampoo', 'Baby lotion', 'Thermometer', 'Pacifiers']
+                },
+                
+                # Home Templates
+                {
+                    'name': 'New Home',
+                    'description': 'Basic household essentials for new home',
+                    'list_type': 'home',
+                    'items': ['Toilet paper', 'Paper towels', 'Detergent', 'Soap', 'Shampoo', 'Toothpaste', 'Light bulbs', 'Batteries', 'Cleaning supplies']
+                },
+                {
+                    'name': 'Home Office',
+                    'description': 'Supplies for remote work',
+                    'list_type': 'home',
+                    'items': ['Notebooks', 'Pens', 'Pencils', 'Stapler', 'Paper clips', 'Folders', 'Printer paper', 'Ink cartridges']
+                },
+                {
+                    'name': 'Garden Setup',
+                    'description': 'Tools and supplies for gardening',
+                    'list_type': 'home',
+                    'items': ['Seeds', 'Fertilizer', 'Pots', 'Garden tools', 'Watering can', 'Gloves', 'Soil', 'Plant markers']
+                },
+                
+                # Special Occasion Templates
+                {
+                    'name': 'Birthday Party',
+                    'description': 'Everything for a birthday celebration',
+                    'list_type': 'gifts_cards',
+                    'items': ['Balloons', 'Candles', 'Cake', 'Party decorations', 'Gift wrapping', 'Party favors', 'Soda', 'Snacks']
+                },
+                {
+                    'name': 'Wedding Shower',
+                    'description': 'Items for wedding shower celebration',
+                    'list_type': 'gifts_cards',
+                    'items': ['Gift wrapping', 'Greeting cards', 'Decorations', 'Candles', 'Party supplies', 'Gifts', 'Flowers', 'Champagne']
+                },
+                
+                # Travel Templates
+                {
+                    'name': 'Beach Vacation',
+                    'description': 'Essentials for beach vacation',
+                    'list_type': 'travel',
+                    'items': ['Sunscreen', 'Beach towels', 'Swimwear', 'Sunglasses', 'Hat', 'Snacks', 'Water', 'Beach toys']
+                },
+                {
+                    'name': 'Camping Trip',
+                    'description': 'Food and supplies for camping',
+                    'list_type': 'travel',
+                    'items': ['Canned food', 'Water', 'Snacks', 'Coffee', 'Tea', 'Matches', 'Flashlight', 'Batteries', 'First aid kit']
+                },
+                {
+                    'name': 'Road Trip',
+                    'description': 'Snacks and supplies for road travel',
+                    'list_type': 'travel',
+                    'items': ['Snacks', 'Water', 'Soda', 'Coffee', 'Maps', 'Phone charger', 'Music', 'Games', 'Blankets']
+                },
+                
+                # Lifestyle Templates
+                {
+                    'name': 'Fitness/Workout',
+                    'description': 'Supplies for fitness and workout',
+                    'list_type': 'personal_care',
+                    'items': ['Protein powder', 'Energy bars', 'Water bottle', 'Workout clothes', 'Sneakers', 'Towel', 'Headphones', 'Fitness tracker']
+                },
+                {
+                    'name': 'Meal Prep',
+                    'description': 'Containers and ingredients for weekly meal prep',
+                    'list_type': 'supermarket',
+                    'items': ['Meal containers', 'Rice', 'Chicken', 'Vegetables', 'Quinoa', 'Beans', 'Olive oil', 'Herbs', 'Spices']
+                }
+            ]
+            
+            # Filter out templates that already exist
+            new_templates = [t for t in missing_templates if t['name'] not in existing_names]
+            
+            if not new_templates:
+                logging.info("All templates already exist")
+                return
+            
+            # Insert new templates
+            for template in new_templates:
+                cursor.execute('''
+                    INSERT INTO templates (name, description, list_type, items, created_by, is_system_template, usage_count)
+                    VALUES (?, ?, ?, ?, ?, TRUE, 0)
+                ''', (
+                    template['name'],
+                    template['description'],
+                    template['list_type'],
+                    json.dumps(template['items']),
+                    admin_user_id
+                ))
+            
+            logging.info(f"Created {len(new_templates)} new system templates")
+            
+        except Exception as e:
+            logging.error(f"Error creating missing templates: {e}")
 
     def _ensure_supermarket_list_protection(self, cursor):
         """Ensure the supermarket list is always protected and exists"""
