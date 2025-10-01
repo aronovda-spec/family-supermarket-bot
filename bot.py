@@ -59,16 +59,210 @@ class ShoppingBot:
         """Get user's preferred language"""
         return self.db.get_user_language(user_id)
 
-    def get_message(self, user_id: int, key: str, **kwargs) -> str:
-        """Get localized message for user"""
-        lang = self.get_user_language(user_id)
-        message = MESSAGES.get(lang, MESSAGES['en']).get(key, MESSAGES['en'].get(key, key))
-        if kwargs:
-            try:
-                return message.format(**kwargs)
-            except:
-                return message
-        return message
+    def translate_template_name(self, template_name: str) -> str:
+        """Translate template name to Hebrew"""
+        translations = {
+            'Weekly Groceries': 'קניות שבועיות',
+            'Breakfast Essentials': 'חיוני לארוחת בוקר',
+            'Dinner Party': 'מסיבת ערב',
+            'BBQ/Grill': 'על האש/גריל',
+            'Kids Lunch': 'ארוחת צהריים לילדים',
+            'Vegetarian Week': 'שבוע צמחוני',
+            'Budget Shopping': 'קניות בתקציב',
+            'First Aid Kit': 'ערכת עזרה ראשונה',
+            'Cold & Flu': 'הצטננות ושפעת',
+            'Baby Care': 'טיפול בתינוק',
+            'New Home': 'בית חדש',
+            'Home Office': 'משרד ביתי',
+            'Garden Setup': 'הקמת גינה',
+            'Birthday Party': 'מסיבת יום הולדת',
+            'Wedding Shower': 'מסיבת רווקות',
+            'Beach Vacation': 'חופשת חוף',
+            'Camping Trip': 'טיול קמפינג',
+            'Road Trip': 'טיול כביש',
+            'Fitness/Workout': 'כושר/אימון',
+            'Meal Prep': 'הכנת ארוחות'
+        }
+        return translations.get(template_name, template_name)
+
+    def translate_template_description(self, description: str) -> str:
+        """Translate template description to Hebrew"""
+        translations = {
+            'Standard weekly shopping essentials': 'חיוניות קניות שבועיות סטנדרטיות',
+            'Everything needed for breakfast': 'כל מה שצריך לארוחת בוקר',
+            'Ingredients for hosting dinner guests': 'מרכיבים לאירוח אורחים לארוחת ערב',
+            'Everything for a barbecue': 'כל מה שצריך לעל האש',
+            'School lunch items and snacks': 'פריטי ארוחת צהריים וחטיפים לבית הספר',
+            'Plant-based meal ingredients': 'מרכיבי ארוחות צמחוניות',
+            'Essential items for tight budgets': 'פריטים חיוניים לתקציבים צמודים',
+            'Essential first aid supplies': 'אספקת עזרה ראשונה חיונית',
+            'Medicine and supplies for cold and flu': 'תרופות ואספקה להצטננות ושפעת',
+            'Essential baby care items': 'פריטי טיפול בתינוק חיוניים',
+            'Basic household essentials for new home': 'חיוניות בית בסיסיות לבית חדש',
+            'Supplies for remote work': 'אספקה לעבודה מרחוק',
+            'Tools and supplies for gardening': 'כלים ואספקה לגינון',
+            'Everything for a birthday celebration': 'כל מה שצריך לחגיגת יום הולדת',
+            'Items for wedding shower celebration': 'פריטים לחגיגת מסיבת רווקות',
+            'Essentials for beach vacation': 'חיוניות לחופשת חוף',
+            'Food and supplies for camping': 'אוכל ואספקה לקמפינג',
+            'Snacks and supplies for road travel': 'חטיפים ואספקה לנסיעות כביש',
+            'Supplies for fitness and workout': 'אספקה לכושר ואימון',
+            'Containers and ingredients for weekly meal prep': 'מיכלים ומרכיבים להכנת ארוחות שבועיות'
+        }
+        return translations.get(description, description)
+
+    def translate_template_items(self, items: list) -> list:
+        """Translate template items to Hebrew"""
+        translations = {
+            'Milk': 'חלב',
+            'Bread': 'לחם',
+            'Eggs': 'ביצים',
+            'Cheese': 'גבינה',
+            'Yogurt': 'יוגורט',
+            'Apples': 'תפוחים',
+            'Bananas': 'בננות',
+            'Carrots': 'גזר',
+            'Onions': 'בצל',
+            'Potatoes': 'תפוחי אדמה',
+            'Chicken': 'עוף',
+            'Ground meat': 'בשר טחון',
+            'Rice': 'אורז',
+            'Pasta': 'פסטה',
+            'Cereal': 'דגנים',
+            'Coffee': 'קפה',
+            'Tea': 'תה',
+            'Oats': 'שיבולת שועל',
+            'Butter': 'חמאה',
+            'Jam': 'ריבה',
+            'Orange juice': 'מיץ תפוזים',
+            'Fruits': 'פירות',
+            'Wine': 'יין',
+            'Olives': 'זיתים',
+            'Salmon': 'סלמון',
+            'Beef': 'בקר',
+            'Vegetables': 'ירקות',
+            'Herbs': 'עשבי תיבול',
+            'Olive oil': 'שמן זית',
+            'Vinegar': 'חומץ',
+            'Dessert': 'קינוח',
+            'Pork': 'חזיר',
+            'Sausages': 'נקניקיות',
+            'Bacon': 'בייקון',
+            'Ketchup': 'קטשופ',
+            'Mustard': 'חרדל',
+            'BBQ sauce': 'רוטב על האש',
+            'Charcoal': 'פחם',
+            'Beer': 'בירה',
+            'Soda': 'משקה מוגז',
+            'Ham': 'נקניק',
+            'Juice boxes': 'קופסאות מיץ',
+            'Crackers': 'קרקרים',
+            'Cookies': 'עוגיות',
+            'Nuts': 'אגוזים',
+            'Granola bars': 'חטיפי גרנולה',
+            'Tofu': 'טופו',
+            'Beans': 'שעועית',
+            'Lentils': 'עדשים',
+            'Quinoa': 'קינואה',
+            'Seeds': 'זרעים',
+            'Bandages': 'תחבושות',
+            'Antiseptic': 'חומר חיטוי',
+            'Pain relievers': 'משככי כאבים',
+            'Thermometer': 'מדחום',
+            'Gauze': 'גזה',
+            'Medical tape': 'סרט רפואי',
+            'Scissors': 'מספריים',
+            'Tweezers': 'פינצטה',
+            'Cough syrup': 'סירופ שיעול',
+            'Throat lozenges': 'סוכריות גרון',
+            'Tissues': 'ממחטות',
+            'Nasal spray': 'תרסיס אף',
+            'Vitamins': 'ויטמינים',
+            'Honey': 'דבש',
+            'Diapers': 'חיתולים',
+            'Baby formula': 'תחליף חלב',
+            'Baby food': 'אוכל תינוקות',
+            'Baby wipes': 'מגבונים לתינוק',
+            'Baby shampoo': 'שמפו לתינוק',
+            'Baby lotion': 'קרם לתינוק',
+            'Pacifiers': 'מוצצים',
+            'Toilet paper': 'נייר טואלט',
+            'Paper towels': 'מגבות נייר',
+            'Detergent': 'אבקת כביסה',
+            'Soap': 'סבון',
+            'Shampoo': 'שמפו',
+            'Toothpaste': 'משחת שיניים',
+            'Light bulbs': 'נורות',
+            'Batteries': 'סוללות',
+            'Cleaning supplies': 'אספקת ניקיון',
+            'Notebooks': 'מחברות',
+            'Pens': 'עטים',
+            'Pencils': 'עפרונות',
+            'Stapler': 'מהדק',
+            'Paper clips': 'סיכות נייר',
+            'Folders': 'תיקיות',
+            'Printer paper': 'נייר מדפסת',
+            'Ink cartridges': 'מחסניות דיו',
+            'Seeds': 'זרעים',
+            'Fertilizer': 'דשן',
+            'Pots': 'עציצים',
+            'Garden tools': 'כלי גינה',
+            'Watering can': 'משפך השקיה',
+            'Gloves': 'כפפות',
+            'Soil': 'אדמה',
+            'Plant markers': 'סימני צמחים',
+            'Balloons': 'בלונים',
+            'Candles': 'נרות',
+            'Cake': 'עוגה',
+            'Party decorations': 'קישוטי מסיבה',
+            'Gift wrapping': 'עטיפת מתנות',
+            'Party favors': 'מתנות מסיבה',
+            'Snacks': 'חטיפים',
+            'Gift wrapping': 'עטיפת מתנות',
+            'Greeting cards': 'כרטיסי ברכה',
+            'Decorations': 'קישוטים',
+            'Party supplies': 'אספקת מסיבה',
+            'Gifts': 'מתנות',
+            'Flowers': 'פרחים',
+            'Champagne': 'שמפניה',
+            'Sunscreen': 'קרם הגנה',
+            'Beach towels': 'מגבות חוף',
+            'Swimwear': 'בגדי ים',
+            'Sunglasses': 'משקפי שמש',
+            'Hat': 'כובע',
+            'Water': 'מים',
+            'Beach toys': 'צעצועי חוף',
+            'Canned food': 'אוכל משומר',
+            'Matches': 'גפרורים',
+            'Flashlight': 'פנס',
+            'First aid kit': 'ערכת עזרה ראשונה',
+            'Maps': 'מפות',
+            'Phone charger': 'מטען טלפון',
+            'Music': 'מוזיקה',
+            'Games': 'משחקים',
+            'Blankets': 'שמיכות',
+            'Protein powder': 'אבקת חלבון',
+            'Energy bars': 'חטיפי אנרגיה',
+            'Water bottle': 'בקבוק מים',
+            'Workout clothes': 'בגדי אימון',
+            'Sneakers': 'נעלי ספורט',
+            'Towel': 'מגבת',
+            'Headphones': 'אוזניות',
+            'Fitness tracker': 'מעקב כושר',
+            'Meal containers': 'מיכלי ארוחות',
+            'Spices': 'תבלינים'
+        }
+        
+        translated_items = []
+        for item in items:
+            if isinstance(item, dict):
+                item_name = item.get('name', str(item))
+            else:
+                item_name = str(item)
+            translated_name = translations.get(item_name, item_name)
+            translated_items.append(translated_name)
+        
+        return translated_items
 
     def get_category_name(self, user_id: int, category_key: str) -> str:
         """Get localized category name"""
@@ -1522,6 +1716,11 @@ class ShoppingBot:
             # Show immediate feedback
             await query.answer("📂 Loading list management options...")
             await self.show_manage_lists(update, context)
+        
+        elif data == "add_hebrew_translations":
+            # Show immediate feedback
+            await query.answer("🇮🇱 Adding Hebrew translations...")
+            await self.add_hebrew_translations(update, context)
         
         elif data == "rename_items_admin":
             # Show immediate feedback
@@ -5433,16 +5632,29 @@ class ShoppingBot:
         # Get all lists
         lists = self.db.get_all_lists()
         
+        # Get user language for localization
+        user_lang = self.get_user_language(user_id)
+        
         if not lists:
-            message = "❌ No lists found."
-            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
+            if user_lang == 'he':
+                message = "❌ לא נמצאו רשימות."
+                back_to_management_text = "🔙 חזור לניהול"
+            else:
+                message = "❌ No lists found."
+                back_to_management_text = self.get_message(user_id, 'btn_back_to_management')
+            keyboard = [[InlineKeyboardButton(back_to_management_text, callback_data="admin_management")]]
         else:
-            message = "📋 **Template Management**\n\nSelect a list to manage templates:"
+            if user_lang == 'he':
+                message = "📋 **ניהול תבניות**\n\nבחר רשימה לניהול תבניות:"
+                manage_system_templates_text = "🏛️ נהל תבניות מערכת"
+            else:
+                message = "📋 **Template Management**\n\nSelect a list to manage templates:"
+                manage_system_templates_text = "🏛️ Manage System Templates"
             keyboard = []
             
             # Add system template management for admins
             if self.db.is_user_admin(user_id):
-                keyboard.append([InlineKeyboardButton("🏛️ Manage System Templates", callback_data="system_template_management_global")])
+                keyboard.append([InlineKeyboardButton(manage_system_templates_text, callback_data="system_template_management_global")])
                 keyboard.append([])  # Empty row for spacing
             
             # Find and add Supermarket list first (if it exists)
@@ -5502,6 +5714,7 @@ class ShoppingBot:
             [InlineKeyboardButton(f"{self.get_message(user_id, 'btn_manage_categories')} ({category_suggestions_pending})", callback_data="manage_categories")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_templates'), callback_data="template_management_menu")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists_admin")],
+            [InlineKeyboardButton("🇮🇱 Add Hebrew Translations", callback_data="add_hebrew_translations")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         
@@ -7242,6 +7455,48 @@ class ShoppingBot:
         # Return to admin management menu
         await self.show_admin_management_menu(update, context)
 
+    async def add_hebrew_translations(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Add Hebrew translations to existing system templates"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        try:
+            # Add Hebrew translations to templates
+            success = self.db.add_hebrew_translations_to_templates()
+            
+            if success:
+                message = "✅ **Hebrew translations added successfully!**\n\nAll templates (system and user-created) now have Hebrew translations for names, descriptions, and items."
+            else:
+                message = "❌ **Error adding Hebrew translations**\n\nPlease check the logs for more details."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                
+        except Exception as e:
+            error_message = f"❌ **Error adding Hebrew translations**\n\nError: {str(e)}"
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.callback_query:
+                await update.callback_query.edit_message_text(error_message, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(error_message, reply_markup=reply_markup, parse_mode='Markdown')
+
     async def process_item_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Process item rename"""
         user_id = update.effective_user.id
@@ -7439,16 +7694,35 @@ class ShoppingBot:
         list_type = list_info['list_type']
         templates = self.db.get_templates_by_list_type(list_type, user_id)
         
+        # Get user language for localization
+        user_lang = self.get_user_language(user_id)
+        
         if not templates:
-            message = f"📝 **Templates for {list_info['name']}**\n\nNo templates available for this list type yet."
-            keyboard = [[InlineKeyboardButton("🔙 Back to List", callback_data=f"list_menu_{list_id}")]]
+            if user_lang == 'he':
+                message = f"📝 **תבניות עבור {list_info['name']}**\n\nאין תבניות זמינות לסוג רשימה זה עדיין."
+                back_to_list_text = "🔙 חזור לרשימה"
+            else:
+                message = f"📝 **Templates for {list_info['name']}**\n\nNo templates available for this list type yet."
+                back_to_list_text = "🔙 Back to List"
+            keyboard = [[InlineKeyboardButton(back_to_list_text, callback_data=f"list_menu_{list_id}")]]
         else:
-            message = f"📝 **Templates for {list_info['name']}**\n\n"
-            message += f"Available templates ({len(templates)}):\n\n"
+            if user_lang == 'he':
+                message = f"📝 **תבניות עבור {list_info['name']}**\n\n"
+                message += f"תבניות זמינות ({len(templates)}):\n\n"
+            else:
+                message = f"📝 **Templates for {list_info['name']}**\n\n"
+                message += f"Available templates ({len(templates)}):\n\n"
             
             keyboard = []
             for template in templates:  # Show all templates
-                template_name = template['name']
+                # Translate template name if needed
+                if user_lang == 'he' and template.get('name_he'):
+                    template_name = template['name_he']
+                elif user_lang == 'he':
+                    template_name = self.translate_template_name(template['name'])
+                else:
+                    template_name = template['name']
+                
                 item_count = len(template['items'])
                 usage_count = template['usage_count']
                 
@@ -7469,8 +7743,15 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=f"template_preview_{template['id']}_{list_id}")])
             
             # Add template management options
-            keyboard.append([InlineKeyboardButton("💾 Save Current List as Template", callback_data=f"save_template_{list_id}")])
-            keyboard.append([InlineKeyboardButton("🔙 Back to List", callback_data=f"list_menu_{list_id}")])
+            if user_lang == 'he':
+                save_template_text = "💾 שמור רשימה נוכחית כתבנית"
+                back_to_list_text = "🔙 חזור לרשימה"
+            else:
+                save_template_text = "💾 Save Current List as Template"
+                back_to_list_text = "🔙 Back to List"
+            
+            keyboard.append([InlineKeyboardButton(save_template_text, callback_data=f"save_template_{list_id}")])
+            keyboard.append([InlineKeyboardButton(back_to_list_text, callback_data=f"list_menu_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -7498,12 +7779,49 @@ class ShoppingBot:
         # Track preview usage
         self.db.increment_template_usage(template_id, user_id, 'preview')
         
-        message = f"📋 {template['name']} Template Preview\n\n"
-        if template['description']:
-            message += f"{template['description']}\n\n"
+        # Get user language and translate template content if needed
+        user_lang = self.get_user_language(user_id)
         
-        message += f"Items ({len(template['items'])}):\n"
-        for i, item in enumerate(template['items'], 1):
+        # Get template name
+        if user_lang == 'he' and template.get('name_he'):
+            template_name = template['name_he']
+        elif user_lang == 'he':
+            template_name = self.translate_template_name(template['name'])
+        else:
+            template_name = template['name']
+        
+        # Get template description
+        if user_lang == 'he' and template.get('description_he'):
+            template_description = template['description_he']
+        elif user_lang == 'he':
+            template_description = self.translate_template_description(template['description']) if template['description'] else None
+        else:
+            template_description = template['description']
+        
+        # Get template items
+        if user_lang == 'he' and template.get('items_he'):
+            try:
+                import json
+                template_items = json.loads(template['items_he'])
+            except:
+                template_items = self.translate_template_items(template['items'])
+        elif user_lang == 'he':
+            template_items = self.translate_template_items(template['items'])
+        else:
+            template_items = template['items']
+        
+        if user_lang == 'he':
+            message = f"📋 תצוגה מקדימה של תבנית {template_name}\n\n"
+        else:
+            message = f"📋 {template_name} Template Preview\n\n"
+        if template_description:
+            message += f"{template_description}\n\n"
+        
+        if user_lang == 'he':
+            message += f"פריטים ({len(template_items)}):\n"
+        else:
+            message += f"Items ({len(template_items)}):\n"
+        for i, item in enumerate(template_items, 1):
             # Handle both string items and dict items
             if isinstance(item, dict):
                 item_name = item.get('name', str(item))
@@ -7511,13 +7829,27 @@ class ShoppingBot:
                 item_name = str(item)
             message += f"{i}. {item_name}\n"
         
-        message += f"\n💡 Choose how to use this template:"
+        # Get localized button text
+        if user_lang == 'he':
+            choose_text = "💡 בחר איך להשתמש בתבנית זו:"
+            add_all_text = "✅ הוסף את כל הפריטים"
+            select_items_text = "🎯 בחר פריטים"
+            replace_list_text = "🔄 החלף רשימה"
+            back_to_templates_text = "🔙 חזור לתבניות"
+        else:
+            choose_text = "💡 Choose how to use this template:"
+            add_all_text = "✅ Add All Items"
+            select_items_text = "🎯 Select Items"
+            replace_list_text = "🔄 Replace List"
+            back_to_templates_text = "🔙 Back to Templates"
+        
+        message += f"\n{choose_text}"
         
         keyboard = [
-            [InlineKeyboardButton("✅ Add All Items", callback_data=f"template_add_all_{template_id}_{list_id}")],
-            [InlineKeyboardButton("🎯 Select Items", callback_data=f"template_select_{template_id}_{list_id}")],
-            [InlineKeyboardButton("🔄 Replace List", callback_data=f"template_replace_{template_id}_{list_id}")],
-            [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+            [InlineKeyboardButton(add_all_text, callback_data=f"template_add_all_{template_id}_{list_id}")],
+            [InlineKeyboardButton(select_items_text, callback_data=f"template_select_{template_id}_{list_id}")],
+            [InlineKeyboardButton(replace_list_text, callback_data=f"template_replace_{template_id}_{list_id}")],
+            [InlineKeyboardButton(back_to_templates_text, callback_data=f"templates_list_{list_id}")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7774,41 +8106,75 @@ class ShoppingBot:
             all_templates = self.db.get_templates_by_list_type(list_type)
             system_templates_for_type = [t for t in all_templates if t['is_system_template']]
         
-        message = f"⚙️ **Template Management for {list_info['name']}**\n\n"
+        # Get user language for localization
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"⚙️ **ניהול תבניות עבור {list_info['name']}**\n\n"
+        else:
+            message = f"⚙️ **Template Management for {list_info['name']}**\n\n"
         
         # Show user templates
         if user_templates_for_type:
-            message += f"📝 **Your Templates** ({len(user_templates_for_type)}):\n"
-            for template in user_templates_for_type:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
+            if user_lang == 'he':
+                message += f"📝 **התבניות שלך** ({len(user_templates_for_type)}):\n"
+                for template in user_templates_for_type:
+                    usage_info = f" ({template['usage_count']} שימושים)" if template['usage_count'] > 0 else ""
+                    message += f"• {template['name']} ({len(template['items'])} פריטים){usage_info}\n"
+            else:
+                message += f"📝 **Your Templates** ({len(user_templates_for_type)}):\n"
+                for template in user_templates_for_type:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
             message += "\n"
         else:
-            message += "📝 **Your Templates**: None created yet.\n\n"
+            if user_lang == 'he':
+                message += "📝 **התבניות שלך**: עדיין לא נוצרו.\n\n"
+            else:
+                message += "📝 **Your Templates**: None created yet.\n\n"
         
         # Show system templates for admins
         if is_admin and system_templates_for_type:
-            message += f"🏛️ **System Templates** ({len(system_templates_for_type)}):\n"
-            for template in system_templates_for_type:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                message += f"• {template['name']} ({len(template['items'])} items){usage_info}{creator_info}\n"
+            if user_lang == 'he':
+                message += f"🏛️ **תבניות מערכת** ({len(system_templates_for_type)}):\n"
+                for template in system_templates_for_type:
+                    usage_info = f" ({template['usage_count']} שימושים)" if template['usage_count'] > 0 else ""
+                    creator_info = f" על ידי {template.get('first_name', 'לא ידוע')}" if template.get('first_name') else ""
+                    message += f"• {template['name']} ({len(template['items'])} פריטים){usage_info}{creator_info}\n"
+            else:
+                message += f"🏛️ **System Templates** ({len(system_templates_for_type)}):\n"
+                for template in system_templates_for_type:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                    message += f"• {template['name']} ({len(template['items'])} items){usage_info}{creator_info}\n"
             message += "\n"
         elif is_admin:
-            message += "🏛️ **System Templates**: None created yet.\n\n"
+            if user_lang == 'he':
+                message += "🏛️ **תבניות מערכת**: עדיין לא נוצרו.\n\n"
+            else:
+                message += "🏛️ **System Templates**: None created yet.\n\n"
         
         keyboard = []
         
         # User template management
         if user_templates_for_type:
-            keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
-            keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
+            if user_lang == 'he':
+                keyboard.append([InlineKeyboardButton("📊 סטטיסטיקות התבניות שלי", callback_data=f"template_stats_{list_id}")])
+                keyboard.append([InlineKeyboardButton("⚙️ נהל את התבניות שלי", callback_data=f"manage_my_templates_{list_id}")])
+            else:
+                keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
+                keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
         
         # Admin system template management - moved to main template management menu
         
-        keyboard.extend([
-            [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
-        ])
+        if user_lang == 'he':
+            keyboard.extend([
+                [InlineKeyboardButton("🔙 חזור לתבניות", callback_data=f"templates_list_{list_id}")]
+            ])
+        else:
+            keyboard.extend([
+                [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -7830,37 +8196,72 @@ class ShoppingBot:
         all_templates = self.db.get_templates_by_list_type(list_type)
         system_templates = [t for t in all_templates if t['is_system_template']]
         
-        message = f"🏛️ **System Template Management for {list_info['name']}**\n\n"
+        # Get user language for localization
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"🏛️ **ניהול תבניות מערכת עבור {list_info['name']}**\n\n"
+        else:
+            message = f"🏛️ **System Template Management for {list_info['name']}**\n\n"
         
         if system_templates:
-            message += f"**System Templates** ({len(system_templates)}):\n\n"
-            for template in system_templates:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
-                message += f"**{template['name']}**{usage_info}{creator_info}\n"
-                message += f"• Items: {len(template['items'])}\n"
-                message += f"• Created: {created_date}\n"
-                if template['description']:
-                    message += f"• Description: {template['description']}\n"
-                message += "\n"
+            if user_lang == 'he':
+                message += f"**תבניות מערכת** ({len(system_templates)}):\n\n"
+                for template in system_templates:
+                    usage_info = f" ({template['usage_count']} שימושים)" if template['usage_count'] > 0 else ""
+                    creator_info = f" על ידי {template.get('first_name', 'לא ידוע')}" if template.get('first_name') else ""
+                    created_date = template['created_at'][:10] if template['created_at'] else "לא ידוע"
+                    message += f"**{template['name']}**{usage_info}{creator_info}\n"
+                    message += f"• פריטים: {len(template['items'])}\n"
+                    message += f"• נוצר: {created_date}\n"
+                    if template['description']:
+                        message += f"• תיאור: {template['description']}\n"
+                    message += "\n"
+            else:
+                message += f"**System Templates** ({len(system_templates)}):\n\n"
+                for template in system_templates:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                    created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
+                    message += f"**{template['name']}**{usage_info}{creator_info}\n"
+                    message += f"• Items: {len(template['items'])}\n"
+                    message += f"• Created: {created_date}\n"
+                    if template['description']:
+                        message += f"• Description: {template['description']}\n"
+                    message += "\n"
         else:
-            message += "No system templates found for this list type.\n\n"
+            if user_lang == 'he':
+                message += "לא נמצאו תבניות מערכת לסוג רשימה זה.\n\n"
+            else:
+                message += "No system templates found for this list type.\n\n"
         
         keyboard = []
         
         if system_templates:
             for template in system_templates:
-                keyboard.append([
-                    InlineKeyboardButton(f"✏️ Edit {template['name']}", callback_data=f"edit_system_template_{template['id']}"),
-                    InlineKeyboardButton(f"🗑️ Delete", callback_data=f"delete_system_template_{template['id']}")
-                ])
+                if user_lang == 'he':
+                    keyboard.append([
+                        InlineKeyboardButton(f"✏️ ערוך {template['name']}", callback_data=f"edit_system_template_{template['id']}"),
+                        InlineKeyboardButton(f"🗑️ מחק", callback_data=f"delete_system_template_{template['id']}")
+                    ])
+                else:
+                    keyboard.append([
+                        InlineKeyboardButton(f"✏️ Edit {template['name']}", callback_data=f"edit_system_template_{template['id']}"),
+                        InlineKeyboardButton(f"🗑️ Delete", callback_data=f"delete_system_template_{template['id']}")
+                    ])
         
-        keyboard.extend([
-            [InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_system_template_{list_id}")],
-            [InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_empty_system_template_{list_id}")],
-            [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
-        ])
+        if user_lang == 'he':
+            keyboard.extend([
+                [InlineKeyboardButton("➕ צור מהרשימה הנוכחית", callback_data=f"create_system_template_{list_id}")],
+                [InlineKeyboardButton("➕ צור תבנית ריקה", callback_data=f"create_empty_system_template_{list_id}")],
+                [InlineKeyboardButton("🔙 חזור לניהול תבניות", callback_data=f"template_management_{list_id}")]
+            ])
+        else:
+            keyboard.extend([
+                [InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_system_template_{list_id}")],
+                [InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_empty_system_template_{list_id}")],
+                [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -7876,23 +8277,46 @@ class ShoppingBot:
         # Get all system templates (global, not list-specific)
         system_templates = self.db.get_all_system_templates()
         
-        message = "🏛️ **Global System Template Management**\n\n"
+        # Get user language for localization
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = "🏛️ **ניהול תבניות מערכת גלובלי**\n\n"
+        else:
+            message = "🏛️ **Global System Template Management**\n\n"
         
         if system_templates:
-            message += f"**System Templates** ({len(system_templates)}):\n\n"
-            for template in system_templates:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
-                list_type_info = f" for {template['list_type']}" if template['list_type'] else ""
-                message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
-                message += f"• Items: {len(template['items'])}\n"
-                message += f"• Created: {created_date}\n"
-                if template['description']:
-                    message += f"• Description: {template['description']}\n"
-                message += "\n"
+            if user_lang == 'he':
+                message += f"**תבניות מערכת** ({len(system_templates)}):\n\n"
+                for template in system_templates:
+                    usage_info = f" ({template['usage_count']} שימושים)" if template['usage_count'] > 0 else ""
+                    creator_info = f" על ידי {template.get('first_name', 'לא ידוע')}" if template.get('first_name') else ""
+                    created_date = template['created_at'][:10] if template['created_at'] else "לא ידוע"
+                    list_type_info = f" עבור {template['list_type']}" if template['list_type'] else ""
+                    message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
+                    message += f"• פריטים: {len(template['items'])}\n"
+                    message += f"• נוצר: {created_date}\n"
+                    if template['description']:
+                        message += f"• תיאור: {template['description']}\n"
+                    message += "\n"
+            else:
+                message += f"**System Templates** ({len(system_templates)}):\n\n"
+                for template in system_templates:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                    created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
+                    list_type_info = f" for {template['list_type']}" if template['list_type'] else ""
+                    message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
+                    message += f"• Items: {len(template['items'])}\n"
+                    message += f"• Created: {created_date}\n"
+                    if template['description']:
+                        message += f"• Description: {template['description']}\n"
+                    message += "\n"
         else:
-            message += "No system templates found.\n\n"
+            if user_lang == 'he':
+                message += "לא נמצאו תבניות מערכת.\n\n"
+            else:
+                message += "No system templates found.\n\n"
         
         keyboard = []
         
@@ -7906,11 +8330,18 @@ class ShoppingBot:
                 )])
         
         # Add creation options
-        keyboard.extend([
-            [InlineKeyboardButton("➕ Create from List", callback_data="create_system_template_global")],
-            [InlineKeyboardButton("➕ Create Empty Template", callback_data="create_empty_system_template_global")],
-            [InlineKeyboardButton("🔙 Back to Template Management", callback_data="template_management_menu")]
-        ])
+        if user_lang == 'he':
+            keyboard.extend([
+                [InlineKeyboardButton("➕ צור מרשימה", callback_data="create_system_template_global")],
+                [InlineKeyboardButton("➕ צור תבנית ריקה", callback_data="create_empty_system_template_global")],
+                [InlineKeyboardButton("🔙 חזור לניהול תבניות", callback_data="template_management_menu")]
+            ])
+        else:
+            keyboard.extend([
+                [InlineKeyboardButton("➕ Create from List", callback_data="create_system_template_global")],
+                [InlineKeyboardButton("➕ Create Empty Template", callback_data="create_empty_system_template_global")],
+                [InlineKeyboardButton("🔙 Back to Template Management", callback_data="template_management_menu")]
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -9030,10 +9461,16 @@ class ShoppingBot:
             ])
         
         # Add creation buttons
-        keyboard.append([
-            InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_user_template_from_list_{list_id}"),
-            InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_user_template_from_scratch_{list_id}")
-        ])
+        if user_lang == 'he':
+            keyboard.append([
+                InlineKeyboardButton("➕ צור מהרשימה הנוכחית", callback_data=f"create_user_template_from_list_{list_id}"),
+                InlineKeyboardButton("➕ צור תבנית ריקה", callback_data=f"create_user_template_from_scratch_{list_id}")
+            ])
+        else:
+            keyboard.append([
+                InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_user_template_from_list_{list_id}"),
+                InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_user_template_from_scratch_{list_id}")
+            ])
         
         keyboard.append([InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")])
         

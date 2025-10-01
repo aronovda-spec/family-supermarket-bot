@@ -148,6 +148,34 @@ class Database:
                     else:
                         print(f"Error adding list_id column to item_suggestions: {e}")
                 
+                # Migration: Add Hebrew columns to templates table
+                try:
+                    cursor.execute('ALTER TABLE templates ADD COLUMN name_he TEXT')
+                    print("Added name_he column to templates table")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        print("name_he column already exists in templates table")
+                    else:
+                        print(f"Error adding name_he column to templates: {e}")
+                
+                try:
+                    cursor.execute('ALTER TABLE templates ADD COLUMN description_he TEXT')
+                    print("Added description_he column to templates table")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        print("description_he column already exists in templates table")
+                    else:
+                        print(f"Error adding description_he column to templates: {e}")
+                
+                try:
+                    cursor.execute('ALTER TABLE templates ADD COLUMN items_he TEXT')
+                    print("Added items_he column to templates table")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        print("items_he column already exists in templates table")
+                    else:
+                        print(f"Error adding items_he column to templates: {e}")
+                
                 # Custom categories table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS custom_categories (
@@ -210,9 +238,12 @@ class Database:
                     CREATE TABLE IF NOT EXISTS templates (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
+                        name_he TEXT,
                         description TEXT,
+                        description_he TEXT,
                         list_type TEXT NOT NULL,
                         items TEXT NOT NULL,  -- JSON array of items
+                        items_he TEXT,  -- JSON array of Hebrew items
                         created_by INTEGER NOT NULL,
                         is_system_template BOOLEAN DEFAULT FALSE,
                         usage_count INTEGER DEFAULT 0,
@@ -2310,7 +2341,7 @@ class Database:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT t.id, t.name, t.description, t.list_type, t.items, t.created_by, t.is_system_template,
+                    SELECT t.id, t.name, t.name_he, t.description, t.description_he, t.list_type, t.items, t.items_he, t.created_by, t.is_system_template,
                            t.usage_count, t.last_used, t.created_at,
                            u.username, u.first_name, u.last_name
                     FROM templates t
@@ -2324,17 +2355,20 @@ class Database:
                     template = {
                         'id': row[0],
                         'name': row[1],
-                        'description': row[2],
-                        'list_type': row[3],
-                        'items': json.loads(row[4]) if row[4] else [],
-                        'created_by': row[5],
-                        'is_system_template': bool(row[6]),
-                        'usage_count': row[7] or 0,
-                        'last_used': row[8],
-                        'created_at': row[9],
-                        'username': row[10],
-                        'first_name': row[11],
-                        'last_name': row[12]
+                        'name_he': row[2],
+                        'description': row[3],
+                        'description_he': row[4],
+                        'list_type': row[5],
+                        'items': json.loads(row[6]) if row[6] else [],
+                        'items_he': json.loads(row[7]) if row[7] else None,
+                        'created_by': row[8],
+                        'is_system_template': bool(row[9]),
+                        'usage_count': row[10] or 0,
+                        'last_used': row[11],
+                        'created_at': row[12],
+                        'username': row[13],
+                        'first_name': row[14],
+                        'last_name': row[15]
                     }
                     templates.append(template)
                 
@@ -2351,7 +2385,7 @@ class Database:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT t.id, t.name, t.description, t.list_type, t.items, t.created_by, t.is_system_template,
+                    SELECT t.id, t.name, t.name_he, t.description, t.description_he, t.list_type, t.items, t.items_he, t.created_by, t.is_system_template,
                            t.usage_count, t.last_used, t.created_at,
                            u.username, u.first_name, u.last_name
                     FROM templates t
@@ -2364,22 +2398,155 @@ class Database:
                     return {
                         'id': row[0],
                         'name': row[1],
-                        'description': row[2],
-                        'list_type': row[3],
-                        'items': json.loads(row[4]) if row[4] else [],
-                        'created_by': row[5],
-                        'is_system_template': bool(row[6]),
-                        'usage_count': row[7] or 0,
-                        'last_used': row[8],
-                        'created_at': row[9],
-                        'username': row[10],
-                        'first_name': row[11],
-                        'last_name': row[12]
+                        'name_he': row[2],
+                        'description': row[3],
+                        'description_he': row[4],
+                        'list_type': row[5],
+                        'items': json.loads(row[6]) if row[6] else [],
+                        'items_he': json.loads(row[7]) if row[7] else None,
+                        'created_by': row[8],
+                        'is_system_template': bool(row[9]),
+                        'usage_count': row[10] or 0,
+                        'last_used': row[11],
+                        'created_at': row[12],
+                        'username': row[13],
+                        'first_name': row[14],
+                        'last_name': row[15]
                     }
                 return None
         except Exception as e:
             print(f"Error getting template by ID: {e}")
             return None
+
+    def add_hebrew_translations_to_templates(self):
+        """Add Hebrew translations to existing system templates"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get all templates without Hebrew translations
+                cursor.execute('''
+                    SELECT id, name, description, items 
+                    FROM templates 
+                    WHERE name_he IS NULL OR name_he = ''
+                ''')
+                
+                templates = cursor.fetchall()
+                
+                # Translation mappings
+                name_translations = {
+                    'Weekly Groceries': 'קניות שבועיות',
+                    'Breakfast Essentials': 'חיוני לארוחת בוקר',
+                    'Dinner Party': 'מסיבת ערב',
+                    'BBQ/Grill': 'על האש/גריל',
+                    'Kids Lunch': 'ארוחת צהריים לילדים',
+                    'Vegetarian Week': 'שבוע צמחוני',
+                    'Budget Shopping': 'קניות בתקציב',
+                    'First Aid Kit': 'ערכת עזרה ראשונה',
+                    'Cold & Flu': 'הצטננות ושפעת',
+                    'Baby Care': 'טיפול בתינוק',
+                    'New Home': 'בית חדש',
+                    'Home Office': 'משרד ביתי',
+                    'Garden Setup': 'הקמת גינה',
+                    'Birthday Party': 'מסיבת יום הולדת',
+                    'Wedding Shower': 'מסיבת רווקות',
+                    'Beach Vacation': 'חופשת חוף',
+                    'Camping Trip': 'טיול קמפינג',
+                    'Road Trip': 'טיול כביש',
+                    'Fitness/Workout': 'כושר/אימון',
+                    'Meal Prep': 'הכנת ארוחות'
+                }
+                
+                description_translations = {
+                    'Standard weekly shopping essentials': 'חיוניות קניות שבועיות סטנדרטיות',
+                    'Everything needed for breakfast': 'כל מה שצריך לארוחת בוקר',
+                    'Ingredients for hosting dinner guests': 'מרכיבים לאירוח אורחים לארוחת ערב',
+                    'Everything for a barbecue': 'כל מה שצריך לעל האש',
+                    'School lunch items and snacks': 'פריטי ארוחת צהריים וחטיפים לבית הספר',
+                    'Plant-based meal ingredients': 'מרכיבי ארוחות צמחוניות',
+                    'Essential items for tight budgets': 'פריטים חיוניים לתקציבים צמודים',
+                    'Essential first aid supplies': 'אספקת עזרה ראשונה חיונית',
+                    'Medicine and supplies for cold and flu': 'תרופות ואספקה להצטננות ושפעת',
+                    'Essential baby care items': 'פריטי טיפול בתינוק חיוניים',
+                    'Basic household essentials for new home': 'חיוניות בית בסיסיות לבית חדש',
+                    'Supplies for remote work': 'אספקה לעבודה מרחוק',
+                    'Tools and supplies for gardening': 'כלים ואספקה לגינון',
+                    'Everything for a birthday celebration': 'כל מה שצריך לחגיגת יום הולדת',
+                    'Items for wedding shower celebration': 'פריטים לחגיגת מסיבת רווקות',
+                    'Essentials for beach vacation': 'חיוניות לחופשת חוף',
+                    'Food and supplies for camping': 'אוכל ואספקה לקמפינג',
+                    'Snacks and supplies for road travel': 'חטיפים ואספקה לנסיעות כביש',
+                    'Supplies for fitness and workout': 'אספקה לכושר ואימון',
+                    'Containers and ingredients for weekly meal prep': 'מיכלים ומרכיבים להכנת ארוחות שבועיות'
+                }
+                
+                item_translations = {
+                    'Milk': 'חלב', 'Bread': 'לחם', 'Eggs': 'ביצים', 'Cheese': 'גבינה', 'Yogurt': 'יוגורט',
+                    'Apples': 'תפוחים', 'Bananas': 'בננות', 'Carrots': 'גזר', 'Onions': 'בצל', 'Potatoes': 'תפוחי אדמה',
+                    'Chicken': 'עוף', 'Ground meat': 'בשר טחון', 'Rice': 'אורז', 'Pasta': 'פסטה', 'Cereal': 'דגנים',
+                    'Coffee': 'קפה', 'Tea': 'תה', 'Oats': 'שיבולת שועל', 'Butter': 'חמאה', 'Jam': 'ריבה',
+                    'Orange juice': 'מיץ תפוזים', 'Fruits': 'פירות', 'Wine': 'יין', 'Olives': 'זיתים',
+                    'Salmon': 'סלמון', 'Beef': 'בקר', 'Vegetables': 'ירקות', 'Herbs': 'עשבי תיבול',
+                    'Olive oil': 'שמן זית', 'Vinegar': 'חומץ', 'Dessert': 'קינוח', 'Pork': 'חזיר',
+                    'Sausages': 'נקניקיות', 'Bacon': 'בייקון', 'Ketchup': 'קטשופ', 'Mustard': 'חרדל',
+                    'BBQ sauce': 'רוטב על האש', 'Charcoal': 'פחם', 'Beer': 'בירה', 'Soda': 'משקה מוגז',
+                    'Ham': 'נקניק', 'Juice boxes': 'קופסאות מיץ', 'Crackers': 'קרקרים', 'Cookies': 'עוגיות',
+                    'Nuts': 'אגוזים', 'Granola bars': 'חטיפי גרנולה', 'Tofu': 'טופו', 'Beans': 'שעועית',
+                    'Lentils': 'עדשים', 'Quinoa': 'קינואה', 'Seeds': 'זרעים', 'Bandages': 'תחבושות',
+                    'Antiseptic': 'חומר חיטוי', 'Pain relievers': 'משככי כאבים', 'Thermometer': 'מדחום',
+                    'Gauze': 'גזה', 'Medical tape': 'סרט רפואי', 'Scissors': 'מספריים', 'Tweezers': 'פינצטה',
+                    'Cough syrup': 'סירופ שיעול', 'Throat lozenges': 'סוכריות גרון', 'Tissues': 'ממחטות',
+                    'Nasal spray': 'תרסיס אף', 'Vitamins': 'ויטמינים', 'Honey': 'דבש', 'Diapers': 'חיתולים',
+                    'Baby formula': 'תחליף חלב', 'Baby food': 'אוכל תינוקות', 'Baby wipes': 'מגבונים לתינוק',
+                    'Baby shampoo': 'שמפו לתינוק', 'Baby lotion': 'קרם לתינוק', 'Pacifiers': 'מוצצים',
+                    'Toilet paper': 'נייר טואלט', 'Paper towels': 'מגבות נייר', 'Detergent': 'אבקת כביסה',
+                    'Soap': 'סבון', 'Shampoo': 'שמפו', 'Toothpaste': 'משחת שיניים', 'Light bulbs': 'נורות',
+                    'Batteries': 'סוללות', 'Cleaning supplies': 'אספקת ניקיון', 'Notebooks': 'מחברות',
+                    'Pens': 'עטים', 'Pencils': 'עפרונות', 'Stapler': 'מהדק', 'Paper clips': 'סיכות נייר',
+                    'Folders': 'תיקיות', 'Printer paper': 'נייר מדפסת', 'Ink cartridges': 'מחסניות דיו',
+                    'Fertilizer': 'דשן', 'Pots': 'עציצים', 'Garden tools': 'כלי גינה', 'Watering can': 'משפך השקיה',
+                    'Gloves': 'כפפות', 'Soil': 'אדמה', 'Plant markers': 'סימני צמחים', 'Balloons': 'בלונים',
+                    'Candles': 'נרות', 'Cake': 'עוגה', 'Party decorations': 'קישוטי מסיבה',
+                    'Gift wrapping': 'עטיפת מתנות', 'Party favors': 'מתנות מסיבה', 'Snacks': 'חטיפים',
+                    'Greeting cards': 'כרטיסי ברכה', 'Decorations': 'קישוטים', 'Party supplies': 'אספקת מסיבה',
+                    'Gifts': 'מתנות', 'Flowers': 'פרחים', 'Champagne': 'שמפניה', 'Sunscreen': 'קרם הגנה',
+                    'Beach towels': 'מגבות חוף', 'Swimwear': 'בגדי ים', 'Sunglasses': 'משקפי שמש',
+                    'Hat': 'כובע', 'Water': 'מים', 'Beach toys': 'צעצועי חוף', 'Canned food': 'אוכל משומר',
+                    'Matches': 'גפרורים', 'Flashlight': 'פנס', 'First aid kit': 'ערכת עזרה ראשונה',
+                    'Maps': 'מפות', 'Phone charger': 'מטען טלפון', 'Music': 'מוזיקה', 'Games': 'משחקים',
+                    'Blankets': 'שמיכות', 'Protein powder': 'אבקת חלבון', 'Energy bars': 'חטיפי אנרגיה',
+                    'Water bottle': 'בקבוק מים', 'Workout clothes': 'בגדי אימון', 'Sneakers': 'נעלי ספורט',
+                    'Towel': 'מגבת', 'Headphones': 'אוזניות', 'Fitness tracker': 'מעקב כושר',
+                    'Meal containers': 'מיכלי ארוחות', 'Spices': 'תבלינים', 'Drinks': 'משקאות'
+                }
+                
+                updated_count = 0
+                for template_id, name, description, items_json in templates:
+                    # Get Hebrew translations
+                    name_he = name_translations.get(name, name)
+                    description_he = description_translations.get(description, description) if description else None
+                    
+                    # Translate items
+                    items = json.loads(items_json) if items_json else []
+                    items_he = [item_translations.get(item, item) for item in items]
+                    
+                    # Update the template
+                    cursor.execute('''
+                        UPDATE templates 
+                        SET name_he = ?, description_he = ?, items_he = ?
+                        WHERE id = ?
+                    ''', (name_he, description_he, json.dumps(items_he), template_id))
+                    
+                    updated_count += 1
+                
+                conn.commit()
+                print(f"Successfully added Hebrew translations to {updated_count} templates")
+                return True
+                
+        except Exception as e:
+            print(f"Error adding Hebrew translations to templates: {e}")
+            return False
 
     def get_templates_by_list_type(self, list_type: str, user_id: int = None) -> List[Dict]:
         """Get templates for a specific list type"""
@@ -2391,7 +2558,7 @@ class Database:
                 if user_id:
                     # Get user templates for this list type and ALL system templates
                     cursor.execute('''
-                        SELECT t.id, t.name, t.description, t.items, t.created_by, t.is_system_template,
+                        SELECT t.id, t.name, t.name_he, t.description, t.description_he, t.items, t.items_he, t.created_by, t.is_system_template,
                                t.usage_count, t.last_used, t.created_at,
                                u.username, u.first_name, u.last_name
                         FROM templates t
@@ -2402,7 +2569,7 @@ class Database:
                 else:
                     # Get user templates for this list type and ALL system templates
                     cursor.execute('''
-                        SELECT t.id, t.name, t.description, t.items, t.created_by, t.is_system_template,
+                        SELECT t.id, t.name, t.name_he, t.description, t.description_he, t.items, t.items_he, t.created_by, t.is_system_template,
                                t.usage_count, t.last_used, t.created_at,
                                u.username, u.first_name, u.last_name
                         FROM templates t
@@ -2416,16 +2583,19 @@ class Database:
                     templates.append({
                         'id': row[0],
                         'name': row[1],
-                        'description': row[2],
-                        'items': json.loads(row[3]),
-                        'created_by': row[4],
-                        'is_system_template': row[5],
-                        'usage_count': row[6],
-                        'last_used': row[7],
-                        'created_at': row[8],
-                        'creator_username': row[9],
-                        'creator_first_name': row[10],
-                        'creator_last_name': row[11]
+                        'name_he': row[2],
+                        'description': row[3],
+                        'description_he': row[4],
+                        'items': json.loads(row[5]) if row[5] else [],
+                        'items_he': json.loads(row[6]) if row[6] else None,
+                        'created_by': row[7],
+                        'is_system_template': row[8],
+                        'usage_count': row[9],
+                        'last_used': row[10],
+                        'created_at': row[11],
+                        'creator_username': row[12],
+                        'creator_first_name': row[13],
+                        'creator_last_name': row[14]
                     })
                 return templates
         except Exception as e:
