@@ -2043,9 +2043,16 @@ class ShoppingBot:
         elif data == "delete_permanent_items":
             await self.show_delete_permanent_items_menu(update, context)
         
+        elif data == "delete_items_admin":
+            await self.show_delete_items_menu(update, context)
+        
         elif data.startswith("delete_permanent_items_"):
             category_key = data.replace("delete_permanent_items_", "")
             await self.show_permanent_items_in_category(update, context, category_key)
+        
+        elif data.startswith("delete_items_"):
+            category_key = data.replace("delete_items_", "")
+            await self.show_items_in_category_for_deletion(update, context, category_key)
         
         elif data.startswith("confirm_delete_permanent_item_"):
             # Format: confirm_delete_permanent_item_{category_key}_{item_name}
@@ -2054,6 +2061,16 @@ class ShoppingBot:
                 category_key = parts[0]
                 item_name = parts[1]
                 await self.confirm_delete_permanent_item(update, context, category_key, item_name)
+        
+        elif data.startswith("confirm_delete_item_"):
+            # Format: confirm_delete_item_{item_id} (can be int or string like dynamic_1)
+            item_id = data.replace("confirm_delete_item_", "")
+            await self.confirm_delete_item(update, context, item_id)
+        
+        elif data.startswith("execute_delete_item_"):
+            # Format: execute_delete_item_{item_id} (can be int or string like dynamic_1)
+            item_id = data.replace("execute_delete_item_", "")
+            await self.execute_delete_item(update, context, item_id)
         
         elif data.startswith("rename_items_category_"):
             category_key = data.replace("rename_items_category_", "")
@@ -5384,7 +5401,7 @@ class ShoppingBot:
             [InlineKeyboardButton(f"💡 Manage Items Suggested ({item_suggestions_pending})", callback_data="manage_suggestions")],
             [InlineKeyboardButton("➕ New Item", callback_data="new_item_admin")],
             [InlineKeyboardButton("✏️ Rename Items", callback_data="rename_items_admin")],
-            [InlineKeyboardButton("🗑️ Delete Permanent Items", callback_data="delete_permanent_items")],
+            [InlineKeyboardButton("🗑️ Delete Items", callback_data="delete_items_admin")],
             [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")]
         ]
         
@@ -7787,6 +7804,154 @@ class ShoppingBot:
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
 
+    async def show_delete_items_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show menu to select which category to delete items from (all items, not just permanent)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            if update.message:
+                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        keyboard = []
+        
+        # Add predefined categories
+        for category_key, category_data in CATEGORIES.items():
+            category_name = self.get_category_name(user_id, category_key)
+            keyboard.append([InlineKeyboardButton(
+                f"{category_data['emoji']} {category_name}",
+                callback_data=f"delete_items_{category_key}"
+            )])
+        
+        # Add custom categories
+        custom_categories = self.db.get_custom_categories()
+        for category in custom_categories:
+            category_name = self.get_category_name(user_id, category['category_key'])
+            keyboard.append([InlineKeyboardButton(
+                f"{category['emoji']} {category_name}",
+                callback_data=f"delete_items_{category['category_key']}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back to Manage Items", callback_data="manage_items_admin")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message = "🗑️ **Delete Items**\n\nSelect a category to delete items from (all items, permanent and non-permanent):"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def show_items_in_category_for_deletion(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_key: str):
+        """Show all items in a category for deletion (permanent and non-permanent)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get all items in this category (both permanent and non-permanent)
+        items = self.db.get_items_by_category(category_key)
+        
+        if not items:
+            message = f"❌ No items found in {self.get_category_name(user_id, category_key)} category."
+            keyboard = [[InlineKeyboardButton("🔙 Back to Delete Items", callback_data="delete_items_admin")]]
+        else:
+            message = f"🗑️ **Delete Items from {self.get_category_name(user_id, category_key)}**\n\n"
+            message += f"Found {len(items)} items. Select items to delete:\n\n"
+            
+            keyboard = []
+            
+            for item in items:
+                # Show item name with permanent indicator
+                permanent_indicator = "🔒" if item['is_permanent'] else "📝"
+                button_text = f"{permanent_indicator} {item['name']}"
+                
+                keyboard.append([InlineKeyboardButton(
+                    button_text,
+                    callback_data=f"confirm_delete_item_{item['id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 Back to Delete Items", callback_data="delete_items_admin")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def confirm_delete_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id):
+        """Confirm deletion of any item (permanent or non-permanent)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get item details
+        item = self.db.get_item_by_id(item_id)
+        if not item:
+            await update.callback_query.edit_message_text("❌ Item not found.")
+            return
+        
+        # Get category name
+        category_name = self.get_category_name(user_id, item['category'])
+        
+        # Show confirmation message
+        permanent_text = " (Permanent)" if item['is_permanent'] else " (Non-permanent)"
+        message = f"⚠️ **Confirm Item Deletion**\n\n"
+        message += f"**Item:** {item['name']}{permanent_text}\n"
+        message += f"**Category:** {category_name}\n\n"
+        message += f"Are you sure you want to permanently delete this item?\n\n"
+        message += f"⚠️ **This action cannot be undone!**"
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"execute_delete_item_{item_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"delete_items_{item['category']}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def execute_delete_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id):
+        """Execute deletion of any item (permanent or non-permanent)"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get item details before deletion
+        item = self.db.get_item_by_id(item_id)
+        if not item:
+            await update.callback_query.edit_message_text("❌ Item not found.")
+            return
+        
+        # Delete the item
+        deleted_item_name = self.db.delete_item(item_id)
+        
+        if deleted_item_name:
+            # Get category name for success message
+            category_name = self.get_category_name(user_id, item['category'])
+            permanent_text = " (Permanent)" if item['is_permanent'] else " (Non-permanent)"
+            
+            message = f"✅ **Item Deleted Successfully**\n\n"
+            message += f"**Item:** {item['name']}{permanent_text}\n"
+            message += f"**Category:** {category_name}\n\n"
+            message += f"The item has been permanently deleted from the database."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Delete Items", callback_data="delete_items_admin")]
+            ]
+        else:
+            message = f"❌ **Failed to Delete Item**\n\n"
+            message += f"An error occurred while trying to delete the item. Please try again."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Delete Items", callback_data="delete_items_admin")]
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
 
     async def create_system_template_from_scratch(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Create an empty system template from scratch"""
