@@ -1839,6 +1839,85 @@ class Database:
             logging.error(f"Error creating template: {e}")
             return None
 
+    def get_all_system_templates(self) -> List[Dict]:
+        """Get all system templates (global, not list-specific)"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT t.id, t.name, t.description, t.list_type, t.items, t.created_by, t.is_system_template,
+                           t.usage_count, t.last_used, t.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM templates t
+                    LEFT JOIN users u ON t.created_by = u.user_id
+                    WHERE t.is_system_template = TRUE
+                    ORDER BY t.usage_count DESC, t.created_at DESC
+                ''')
+                
+                templates = []
+                for row in cursor.fetchall():
+                    template = {
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'list_type': row[3],
+                        'items': json.loads(row[4]) if row[4] else [],
+                        'created_by': row[5],
+                        'is_system_template': bool(row[6]),
+                        'usage_count': row[7] or 0,
+                        'last_used': row[8],
+                        'created_at': row[9],
+                        'username': row[10],
+                        'first_name': row[11],
+                        'last_name': row[12]
+                    }
+                    templates.append(template)
+                
+                return templates
+        except Exception as e:
+            print(f"Error getting all system templates: {e}")
+            return []
+
+    def get_template_by_id(self, template_id: int) -> Optional[Dict]:
+        """Get a template by its ID"""
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT t.id, t.name, t.description, t.list_type, t.items, t.created_by, t.is_system_template,
+                           t.usage_count, t.last_used, t.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM templates t
+                    LEFT JOIN users u ON t.created_by = u.user_id
+                    WHERE t.id = ?
+                ''', (template_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'list_type': row[3],
+                        'items': json.loads(row[4]) if row[4] else [],
+                        'created_by': row[5],
+                        'is_system_template': bool(row[6]),
+                        'usage_count': row[7] or 0,
+                        'last_used': row[8],
+                        'created_at': row[9],
+                        'username': row[10],
+                        'first_name': row[11],
+                        'last_name': row[12]
+                    }
+                return None
+        except Exception as e:
+            print(f"Error getting template by ID: {e}")
+            return None
+
     def get_templates_by_list_type(self, list_type: str, user_id: int = None) -> List[Dict]:
         """Get templates for a specific list type"""
         try:
