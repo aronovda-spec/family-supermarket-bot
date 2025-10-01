@@ -2664,15 +2664,26 @@ class Database:
             
             # If no specific items selected, add all items
             if selected_items is None:
-                selected_items = [item['name'] for item in template_items]
+                selected_items = []
+                for item in template_items:
+                    if isinstance(item, dict):
+                        selected_items.append(item.get('name', str(item)))
+                    else:
+                        selected_items.append(str(item))
             
             for item in template_items:
-                if item['name'] in selected_items:
+                # Handle both string items and dict items
+                if isinstance(item, dict):
+                    item_name = item.get('name', str(item))
+                else:
+                    item_name = str(item)
+                
+                if item_name in selected_items:
                     success = self.add_item_to_list(
                         list_id, 
-                        item['name'], 
-                        item.get('category'), 
-                        item.get('notes'), 
+                        item_name,
+                        None,  # no category for template items
+                        None,  # no notes for template items
                         added_by
                     )
                     if success:

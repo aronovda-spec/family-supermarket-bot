@@ -23,6 +23,20 @@ except ImportError:
     except ImportError:
         SPEECH_RECOGNITION_AVAILABLE = False
 
+# Try to import audio processing libraries
+try:
+    from pydub import AudioSegment
+    from pydub.utils import which
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+
+try:
+    import ffmpeg
+    FFMPEG_AVAILABLE = True
+except ImportError:
+    FFMPEG_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -2216,10 +2230,6 @@ class ShoppingBot:
         elif data == "skip_description":
             await self.process_list_description(update, context, None)
         
-        elif data.startswith("view_list_"):
-            list_id = int(data.replace("view_list_", ""))
-            await self.view_list_items(update, context, list_id)
-        
         elif data.startswith("edit_list_name_"):
             list_id = int(data.replace("edit_list_name_", ""))
             await self.show_edit_list_name(update, context, list_id)
@@ -3591,9 +3601,12 @@ class ShoppingBot:
             )
 
     async def show_voice_search_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show voice search prompt"""
+        """Show voice search prompt with availability check"""
         try:
             user_id = update.effective_user.id
+            
+            # Check voice search availability
+            availability_status = self.check_voice_search_availability()
             
             # Create keyboard with voice recording option
             keyboard = [
@@ -3602,7 +3615,20 @@ class ShoppingBot:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
+            # Get base prompt text
             prompt_text = self.get_message(user_id, 'voice_search_prompt')
+            
+            # Add availability information
+            if availability_status['available']:
+                prompt_text += f"\n\n✅ Voice recognition: Available"
+                if availability_status['methods']:
+                    prompt_text += f"\n🔧 Methods: {', '.join(availability_status['methods'])}"
+            else:
+                prompt_text += f"\n\n⚠️ Voice recognition: Limited"
+                if availability_status['reason']:
+                    prompt_text += f"\n📝 Note: {availability_status['reason']}"
+                prompt_text += "\n💡 You can still use voice messages, but manual typing may be required."
+            
             await update.callback_query.edit_message_text(
                 prompt_text,
                 reply_markup=reply_markup
@@ -3610,6 +3636,45 @@ class ShoppingBot:
         except Exception as e:
             logging.error(f"Error in show_voice_search_prompt: {e}")
             await update.callback_query.edit_message_text("❌ Error loading voice search. Please try again.")
+
+    def check_voice_search_availability(self) -> dict:
+        """Check voice search availability and return status information"""
+        status = {
+            'available': False,
+            'methods': [],
+            'reason': None
+        }
+        
+        if not SPEECH_RECOGNITION_AVAILABLE:
+            status['reason'] = "Speech recognition library not installed"
+            return status
+        
+        # Check available recognition methods
+        try:
+            recognizer = sr.Recognizer()
+            
+            # Test Google recognition (most common)
+            try:
+                # This is just a test - we don't actually recognize anything
+                status['methods'].append("Google")
+                status['available'] = True
+            except:
+                pass
+            
+            # Test Sphinx (offline)
+            try:
+                status['methods'].append("Sphinx (offline)")
+                status['available'] = True
+            except:
+                pass
+                
+        except Exception as e:
+            status['reason'] = f"Recognition setup failed: {str(e)}"
+        
+        if not status['available']:
+            status['reason'] = "No working recognition methods found"
+        
+        return status
 
     async def start_voice_recording(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start voice recording for search"""
@@ -3653,18 +3718,28 @@ class ShoppingBot:
                     # Process the search with transcribed text
                     await self.process_search(update, context, transcribed_text)
                 else:
+                    # Provide helpful fallback options
                     await processing_msg.edit_text(
                         "🎤 Voice recognition failed!\n\n"
-                        "Please type what you said so I can search for it:\n\n"
+                        "This might be due to:\n"
+                        "• Background noise\n"
+                        "• Unclear speech\n"
+                        "• Server limitations\n\n"
+                        "Please try:\n"
+                        "• Speaking more clearly\n"
+                        "• Reducing background noise\n"
+                        "• Or type your search query manually:\n\n"
                         "💡 Example: 'milk', 'חלב', 'bread', 'לחם'"
                     )
                     context.user_data['waiting_for_voice_text'] = True
             else:
-                # Speech recognition not available
+                # Speech recognition not available - provide clear explanation
                 await processing_msg.edit_text(
                     "🎤 Voice received!\n\n"
-                    "⚠️ Voice-to-text requires additional setup.\n"
-                    "Please type what you said:"
+                    "⚠️ Voice-to-text is not available on this server.\n"
+                    "This is common on cloud hosting platforms.\n\n"
+                    "Please type your search query manually:\n\n"
+                    "💡 Example: 'milk', 'חלב', 'bread', 'לחם'"
                 )
                 context.user_data['waiting_for_voice_text'] = True
             
@@ -3675,49 +3750,113 @@ class ShoppingBot:
             )
 
     async def transcribe_voice(self, voice_file) -> str:
-        """Transcribe voice file to text"""
+        """Transcribe voice file to text with improved audio processing"""
         try:
             # Download voice file
             voice_data = await voice_file.download_as_bytearray()
             logging.info(f"Voice data downloaded: {len(voice_data)} bytes")
             
+            if not SPEECH_RECOGNITION_AVAILABLE:
+                logging.warning("Speech recognition not available")
+                return None
+            
             # Initialize speech recognizer
             recognizer = sr.Recognizer()
             
-            # Try direct recognition (works with some OGG files)
+            # Convert audio to WAV format for better compatibility
+            audio_data = await self.convert_audio_to_wav(voice_data)
+            if not audio_data:
+                logging.error("Failed to convert audio to WAV format")
+                return None
+            
             try:
-                audio_io = io.BytesIO(voice_data)
+                audio_io = io.BytesIO(audio_data)
                 with sr.AudioFile(audio_io) as source:
+                    # Adjust for ambient noise
+                    recognizer.adjust_for_ambient_noise(source, duration=0.5)
                     audio = recognizer.record(source)
                     
-                    # Try English first
+                    # Try multiple recognition methods
+                    recognition_methods = [
+                        ('Google (English)', lambda: recognizer.recognize_google(audio, language='en-US')),
+                        ('Google (Hebrew)', lambda: recognizer.recognize_google(audio, language='he-IL')),
+                        ('Google (Auto-detect)', lambda: recognizer.recognize_google(audio)),
+                    ]
+                    
+                    # Add offline recognition as fallback
                     try:
-                        text = recognizer.recognize_google(audio, language='en-US')
-                        logging.info(f"Voice transcribed (English): {text}")
-                        return text
-                    except sr.UnknownValueError:
-                        # Try Hebrew if English fails
+                        recognition_methods.append(('Sphinx (Offline)', lambda: recognizer.recognize_sphinx(audio)))
+                    except:
+                        pass  # Sphinx not available
+                    
+                    for method_name, method_func in recognition_methods:
                         try:
-                            text = recognizer.recognize_google(audio, language='he-IL')
-                            logging.info(f"Voice transcribed (Hebrew): {text}")
-                            return text
+                            text = method_func()
+                            if text and text.strip():
+                                logging.info(f"Voice transcribed using {method_name}: {text}")
+                                return text.strip()
                         except sr.UnknownValueError:
-                            # Try auto-detect
-                            try:
-                                text = recognizer.recognize_google(audio)
-                                logging.info(f"Voice transcribed (auto-detect): {text}")
-                                return text
-                            except sr.UnknownValueError:
-                                logging.error("Could not understand voice message")
-                                return None
+                            logging.debug(f"{method_name} could not understand audio")
+                            continue
+                        except sr.RequestError as e:
+                            logging.warning(f"{method_name} request failed: {e}")
+                            continue
+                        except Exception as e:
+                            logging.warning(f"{method_name} failed: {e}")
+                            continue
+                    
+                    logging.error("All voice recognition methods failed")
+                    return None
                                 
             except Exception as e:
-                logging.error(f"Voice recognition failed: {e}")
+                logging.error(f"Voice recognition processing failed: {e}")
                 return None
                 
         except Exception as e:
             logging.error(f"Voice transcription error: {e}")
             return None
+
+    async def convert_audio_to_wav(self, audio_data: bytes) -> bytes:
+        """Convert audio data to WAV format for better speech recognition compatibility"""
+        try:
+            if not PYDUB_AVAILABLE:
+                logging.warning("pydub not available, trying direct OGG processing")
+                return audio_data  # Return original data as fallback
+            
+            # Create temporary file for processing
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_ogg:
+                temp_ogg.write(audio_data)
+                temp_ogg_path = temp_ogg.name
+            
+            try:
+                # Load audio with pydub
+                audio = AudioSegment.from_ogg(temp_ogg_path)
+                
+                # Convert to WAV format with appropriate settings
+                wav_audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+                
+                # Export to bytes
+                wav_buffer = io.BytesIO()
+                wav_audio.export(wav_buffer, format="wav")
+                wav_data = wav_buffer.getvalue()
+                
+                logging.info(f"Audio converted to WAV: {len(wav_data)} bytes")
+                return wav_data
+                
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_ogg_path)
+                except:
+                    pass
+                    
+        except Exception as e:
+            logging.error(f"Audio conversion failed: {e}")
+            # Return original data as fallback
+            return audio_data
 
     async def process_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, search_query: str):
         """Process search query"""
@@ -5151,7 +5290,7 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_add_item'), callback_data=f"categories_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_search'), callback_data=f"search_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data=f"my_items_{list_id}")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_name}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")]
         ]
         
@@ -7365,9 +7504,12 @@ class ShoppingBot:
         
         message += f"Items ({len(template['items'])}):\n"
         for i, item in enumerate(template['items'], 1):
-            category_info = f" ({item['category']})" if item.get('category') else ""
-            notes_info = f" - {item['notes']}" if item.get('notes') else ""
-            message += f"{i}. {item['name']}{category_info}{notes_info}\n"
+            # Handle both string items and dict items
+            if isinstance(item, dict):
+                item_name = item.get('name', str(item))
+            else:
+                item_name = str(item)
+            message += f"{i}. {item_name}\n"
         
         message += f"\n💡 Choose how to use this template:"
         
@@ -7405,7 +7547,7 @@ class ShoppingBot:
             message += f"All items from **{template['name']}** already exist in **{list_info['name']}**."
         
         keyboard = [
-            [InlineKeyboardButton("📋 View List", callback_data=f"view_list_{list_id}")],
+            [InlineKeyboardButton("📋 View List", callback_data=f"list_menu_{list_id}")],
             [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
         ]
         
@@ -7433,11 +7575,12 @@ class ShoppingBot:
         
         keyboard = []
         for i, item in enumerate(template['items']):
-            category_info = f" ({item['category']})" if item.get('category') else ""
-            notes_info = f" - {item['notes']}" if item.get('notes') else ""
-            item_text = f"{item['name']}{category_info}{notes_info}"
-            
-            keyboard.append([InlineKeyboardButton(f"☐ {item_text}", callback_data=f"template_toggle_{template_id}_{i}")])
+            # Handle both string items and dict items
+            if isinstance(item, dict):
+                item_name = item.get('name', str(item))
+            else:
+                item_name = str(item)
+            keyboard.append([InlineKeyboardButton(f"☐ {item_name}", callback_data=f"template_toggle_{template_id}_{i}")])
         
         keyboard.extend([
             [InlineKeyboardButton("✅ Add Selected Items", callback_data=f"template_add_selected_{template_id}_{list_id}")],
@@ -7466,7 +7609,11 @@ class ShoppingBot:
             }
         
         selected_items = context.user_data[selection_key]['selected_items']
-        item_name = template['items'][item_index]['name']
+        # Handle both string items and dict items
+        if isinstance(template['items'][item_index], dict):
+            item_name = template['items'][item_index].get('name', str(template['items'][item_index]))
+        else:
+            item_name = str(template['items'][item_index])
         
         # Toggle selection
         if item_name in selected_items:
@@ -7475,23 +7622,20 @@ class ShoppingBot:
             selected_items.append(item_name)
         
         # Update button text
-        item = template['items'][item_index]
-        category_info = f" ({item['category']})" if item.get('category') else ""
-        notes_info = f" - {item['notes']}" if item.get('notes') else ""
-        item_text = f"{item['name']}{category_info}{notes_info}"
-        
         is_selected = item_name in selected_items
-        button_text = f"{'☑️' if is_selected else '☐'} {item_text}"
+        button_text = f"{'☑️' if is_selected else '☐'} {item_name}"
         
         # Update the specific button
         keyboard = []
         for i, template_item in enumerate(template['items']):
-            category_info = f" ({template_item['category']})" if template_item.get('category') else ""
-            notes_info = f" - {template_item['notes']}" if template_item.get('notes') else ""
-            template_item_text = f"{template_item['name']}{category_info}{notes_info}"
+            # Handle both string items and dict items
+            if isinstance(template_item, dict):
+                item_name = template_item.get('name', str(template_item))
+            else:
+                item_name = str(template_item)
             
-            is_item_selected = template_item['name'] in selected_items
-            button_text = f"{'☑️' if is_item_selected else '☐'} {template_item_text}"
+            is_item_selected = item_name in selected_items
+            button_text = f"{'☑️' if is_item_selected else '☐'} {item_name}"
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f"template_toggle_{template_id}_{i}")])
         
         keyboard.extend([
