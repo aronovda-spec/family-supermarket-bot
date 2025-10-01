@@ -7732,7 +7732,7 @@ class ShoppingBot:
                 elif user_lang == 'he':
                     template_name = self.translate_template_name(template['name'])
                 else:
-                template_name = template['name']
+                    template_name = template['name']
                 
                 item_count = len(template['items'])
                 usage_count = template['usage_count']
