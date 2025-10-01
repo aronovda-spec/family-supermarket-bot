@@ -2050,8 +2050,8 @@ class ShoppingBot:
             await self.show_list_actions(update, context, list_id)
         
         elif data.startswith("view_list_"):
-            list_name = data.replace("view_list_", "")
-            await self.show_list_menu(update, context, list_name)
+            list_id = int(data.replace("view_list_", ""))
+            await self.view_list_items(update, context, list_id)
         
         elif data.startswith("edit_list_name_"):
             list_id = int(data.replace("edit_list_name_", ""))
@@ -4374,7 +4374,7 @@ class ShoppingBot:
             for list_info in personal_lists:
                 keyboard.append([InlineKeyboardButton(
                     f"📋 {list_info['name']}",
-                    callback_data=f"view_list_{list_info['name']}"
+                    callback_data=f"list_menu_{list_info['id']}"
                 )])
             
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")])
@@ -5297,7 +5297,7 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_add_item'), callback_data=f"categories_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_search'), callback_data=f"search_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_my_items'), callback_data=f"my_items_{list_id}")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_name}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_view_items'), callback_data=f"view_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_summary'), callback_data=f"summary_list_{list_id}")]
         ]
         
@@ -5505,8 +5505,8 @@ class ShoppingBot:
         
         # Create buttons with badges
         keyboard = [
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_items'), callback_data="manage_items_admin")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_categories'), callback_data="manage_categories")],
+            [InlineKeyboardButton(f"{self.get_message(user_id, 'btn_manage_items')} ({item_suggestions_pending})", callback_data="manage_items_admin")],
+            [InlineKeyboardButton(f"{self.get_message(user_id, 'btn_manage_categories')} ({category_suggestions_pending})", callback_data="manage_categories")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_templates'), callback_data="template_management_menu")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
