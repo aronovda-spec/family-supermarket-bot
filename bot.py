@@ -476,7 +476,7 @@ class ShoppingBot:
         # Add multi-select option if there are items
         if category_items:
             keyboard.append([InlineKeyboardButton(
-                "🎯 Select Multiple Items", 
+                self.get_message(user_id, 'btn_select_multiple_items'), 
                 callback_data=f"category_select_{category_key}"
             )])
         
@@ -522,7 +522,7 @@ class ShoppingBot:
         # Add multi-select option if there are items
         if category_items:
             keyboard.append([InlineKeyboardButton(
-                "🎯 Select Multiple Items", 
+                self.get_message(user_id, 'btn_select_multiple_items'), 
                 callback_data=f"category_select_{category_key}"
             )])
             
@@ -608,24 +608,24 @@ class ShoppingBot:
         
         # Option 1: Add to current list only (no approval needed)
         keyboard.append([InlineKeyboardButton(
-            "📝 Add to Current List",
+            self.get_message(user_id, 'btn_add_to_current_list'),
             callback_data=f"add_to_list_{category_key}"
         )])
         
         # Option 2: Add permanently to category (requires approval for non-admins)
         if self.db.is_user_admin(user_id):
             keyboard.append([InlineKeyboardButton(
-                "➕ Add to Category Permanently",
+                self.get_message(user_id, 'btn_add_to_category_permanently'),
                 callback_data=f"new_item_direct_{category_key}"
             )])
         else:
             keyboard.append([InlineKeyboardButton(
-                "💡 Suggest for Category",
+                self.get_message(user_id, 'btn_suggest_for_category'),
                 callback_data=f"suggest_new_{category_key}"
             )])
         
         keyboard.append([InlineKeyboardButton(
-            "🏠 Back to Category",
+            self.get_message(user_id, 'btn_back_to_category'),
             callback_data=f"category_{category_key}"
         )])
         
@@ -3165,7 +3165,7 @@ class ShoppingBot:
         
         if not suggestions:
             # Show "no suggestions found" message with back button
-            keyboard = [[InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             message = "💡 **Manage Items Suggested**\n\n✅ No pending item suggestions found.\n\nAll suggestions have been reviewed."
             
@@ -3876,7 +3876,7 @@ class ShoppingBot:
                     callback_data="add_to_list_from_search"
                 ),
                 InlineKeyboardButton(
-                    "💡 Suggest for Category",
+                    self.get_message(user_id, 'btn_suggest_for_category'),
                     callback_data="suggest_from_search"
                 )
             ])
@@ -5292,7 +5292,7 @@ class ShoppingBot:
         
         if not lists:
             message = "❌ No lists found."
-            keyboard = [[InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
         else:
             message = "📋 **Template Management**\n\nSelect a list to manage templates:"
             keyboard = []
@@ -5328,7 +5328,7 @@ class ShoppingBot:
                     callback_data=f"template_management_{list_info['id']}"
                 )])
             
-            keyboard.append([InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")])
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -5355,10 +5355,10 @@ class ShoppingBot:
         
         # Create buttons with badges
         keyboard = [
-            [InlineKeyboardButton("📝 Manage Items", callback_data="manage_items_admin")],
-            [InlineKeyboardButton("🗂️ Manage Categories", callback_data="manage_categories")],
-            [InlineKeyboardButton("📋 Manage Templates", callback_data="template_management_menu")],
-            [InlineKeyboardButton("📂 Manage Lists", callback_data="manage_lists_admin")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_items'), callback_data="manage_items_admin")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_categories'), callback_data="manage_categories")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_templates'), callback_data="template_management_menu")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         
@@ -5451,10 +5451,10 @@ class ShoppingBot:
         
         keyboard = [
             [InlineKeyboardButton(f"💡 Manage Items Suggested ({item_suggestions_pending})", callback_data="manage_suggestions")],
-            [InlineKeyboardButton("➕ New Item", callback_data="new_item_admin")],
-            [InlineKeyboardButton("✏️ Rename Items", callback_data="rename_items_admin")],
-            [InlineKeyboardButton("🗑️ Delete Items", callback_data="delete_items_admin")],
-            [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_new_item'), callback_data="new_item_admin")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_rename_items'), callback_data="rename_items_admin")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_delete_items'), callback_data="delete_items_admin")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -6305,8 +6305,8 @@ class ShoppingBot:
             message = self.get_message(user_id, 'manage_categories_title')
             keyboard = [
                 [InlineKeyboardButton(f"💭 Manage Categories Suggested ({category_suggestions_pending})", callback_data="manage_category_suggestions")],
-                [InlineKeyboardButton("📂 New Category", callback_data="new_category_admin")],
-                [InlineKeyboardButton("✏️ Rename Categories", callback_data="rename_categories_admin")]
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_new_category'), callback_data="new_category_admin")],
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_rename_categories'), callback_data="rename_categories_admin")]
             ]
             
             for category in custom_categories:
