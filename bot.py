@@ -341,6 +341,7 @@ class ShoppingBot:
         
         # Add action buttons
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_new_list'))])
+        keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_my_lists'))])
         
         # Add management buttons
         if self.db.is_user_admin(user_id):
@@ -1497,6 +1498,11 @@ class ShoppingBot:
             # Show immediate feedback
             await query.answer("📝 Loading item management options...")
             await self.show_manage_items_admin(update, context)
+        
+        elif data == "manage_lists_admin":
+            # Show immediate feedback
+            await query.answer("📂 Loading list management options...")
+            await self.show_manage_lists(update, context)
         
         elif data == "rename_items_admin":
             # Show immediate feedback
@@ -4258,7 +4264,7 @@ class ShoppingBot:
         if list_info['list_type'] != 'supermarket':
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_delete_list'), callback_data=f"confirm_delete_list_{list_id}")])
         
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="my_lists")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="manage_lists_admin")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         message = self.get_message(user_id, 'list_actions').format(list_name=list_info['name'])
@@ -5195,7 +5201,26 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton("🏛️ Manage System Templates", callback_data="system_template_management_global")])
                 keyboard.append([])  # Empty row for spacing
             
+            # Find and add Supermarket list first (if it exists)
+            supermarket_list = None
+            other_lists = []
+            
             for list_info in lists:
+                if "Supermarket" in list_info['name'] or "סופר" in list_info['name']:
+                    supermarket_list = list_info
+                else:
+                    other_lists.append(list_info)
+            
+            # Add Supermarket list first (right after system templates)
+            if supermarket_list:
+                button_text = f"📋 {supermarket_list['name']}"
+                keyboard.append([InlineKeyboardButton(
+                    button_text, 
+                    callback_data=f"template_management_{supermarket_list['id']}"
+                )])
+            
+            # Add other lists
+            for list_info in other_lists:
                 button_text = f"📋 {list_info['name']}"
                 keyboard.append([InlineKeyboardButton(
                     button_text, 
@@ -5232,6 +5257,7 @@ class ShoppingBot:
             [InlineKeyboardButton("📝 Manage Items", callback_data="manage_items_admin")],
             [InlineKeyboardButton("🗂️ Manage Categories", callback_data="manage_categories")],
             [InlineKeyboardButton("📋 Manage Templates", callback_data="template_management_menu")],
+            [InlineKeyboardButton("📂 Manage Lists", callback_data="manage_lists_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         
