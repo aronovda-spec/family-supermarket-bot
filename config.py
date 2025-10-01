@@ -979,6 +979,7 @@ For support, contact your family admin.""",
         'btn_delete_items': "🗑️ מחק פריטים",
         'btn_new_category': "📂 קטגוריה חדשה",
         'btn_rename_categories': "✏️ שנה שמות קטגוריות",
+        'btn_add_hebrew_translations': "🇮🇱 הוסף תרגומים עבריים",
         # Additional translations for hard-coded strings
         'search_again': "חפש שוב",
         'restore_original_item': "שחזר פריט מקורי",
