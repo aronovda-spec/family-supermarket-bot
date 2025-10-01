@@ -5160,10 +5160,6 @@ class ShoppingBot:
             # Add maintenance mode only for supermarket list
             if target_list['list_type'] == 'supermarket':
                 keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_maintenance_mode'), callback_data="maintenance_mode")])
-            
-            # Only allow deletion for custom lists (not supermarket list)
-            if target_list['list_type'] != 'supermarket':
-                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_delete_list'), callback_data=f"confirm_delete_list_{list_id}")])
         
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_main_menu'), callback_data="main_menu")])
         
