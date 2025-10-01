@@ -8123,7 +8123,7 @@ class ShoppingBot:
         if user_lang == 'he':
             message = f"⚙️ **ניהול תבניות עבור {list_info['name']}**\n\n"
         else:
-        message = f"⚙️ **Template Management for {list_info['name']}**\n\n"
+            message = f"⚙️ **Template Management for {list_info['name']}**\n\n"
         
         # Show user templates
         if user_templates_for_type:
@@ -8133,16 +8133,16 @@ class ShoppingBot:
                     usage_info = f" ({template['usage_count']} שימושים)" if template['usage_count'] > 0 else ""
                     message += f"• {template['name']} ({len(template['items'])} פריטים){usage_info}\n"
             else:
-            message += f"📝 **Your Templates** ({len(user_templates_for_type)}):\n"
-            for template in user_templates_for_type:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
+                message += f"📝 **Your Templates** ({len(user_templates_for_type)}):\n"
+                for template in user_templates_for_type:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
             message += "\n"
         else:
             if user_lang == 'he':
                 message += "📝 **התבניות שלך**: עדיין לא נוצרו.\n\n"
-        else:
-            message += "📝 **Your Templates**: None created yet.\n\n"
+            else:
+                message += "📝 **Your Templates**: None created yet.\n\n"
         
         # Show system templates for admins
         if is_admin and system_templates_for_type:
@@ -8153,17 +8153,17 @@ class ShoppingBot:
                     creator_info = f" על ידי {template.get('first_name', 'לא ידוע')}" if template.get('first_name') else ""
                     message += f"• {template['name']} ({len(template['items'])} פריטים){usage_info}{creator_info}\n"
             else:
-            message += f"🏛️ **System Templates** ({len(system_templates_for_type)}):\n"
-            for template in system_templates_for_type:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                message += f"• {template['name']} ({len(template['items'])} items){usage_info}{creator_info}\n"
+                message += f"🏛️ **System Templates** ({len(system_templates_for_type)}):\n"
+                for template in system_templates_for_type:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                    message += f"• {template['name']} ({len(template['items'])} items){usage_info}{creator_info}\n"
             message += "\n"
         elif is_admin:
             if user_lang == 'he':
                 message += "🏛️ **תבניות מערכת**: עדיין לא נוצרו.\n\n"
             else:
-            message += "🏛️ **System Templates**: None created yet.\n\n"
+                message += "🏛️ **System Templates**: None created yet.\n\n"
         
         keyboard = []
         
@@ -8173,8 +8173,8 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton("📊 סטטיסטיקות התבניות שלי", callback_data=f"template_stats_{list_id}")])
                 keyboard.append([InlineKeyboardButton("⚙️ נהל את התבניות שלי", callback_data=f"manage_my_templates_{list_id}")])
             else:
-            keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
-            keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
+                keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
+                keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
         
         # Admin system template management - moved to main template management menu
         
@@ -8183,9 +8183,9 @@ class ShoppingBot:
                 [InlineKeyboardButton("🔙 חזור לתבניות", callback_data=f"templates_list_{list_id}")]
             ])
         else:
-        keyboard.extend([
-            [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
-        ])
+            keyboard.extend([
+                [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -8213,7 +8213,7 @@ class ShoppingBot:
         if user_lang == 'he':
             message = f"🏛️ **ניהול תבניות מערכת עבור {list_info['name']}**\n\n"
         else:
-        message = f"🏛️ **System Template Management for {list_info['name']}**\n\n"
+            message = f"🏛️ **System Template Management for {list_info['name']}**\n\n"
         
         if system_templates:
             if user_lang == 'he':
@@ -8229,22 +8229,22 @@ class ShoppingBot:
                         message += f"• תיאור: {template['description']}\n"
                     message += "\n"
             else:
-            message += f"**System Templates** ({len(system_templates)}):\n\n"
-            for template in system_templates:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
-                message += f"**{template['name']}**{usage_info}{creator_info}\n"
-                message += f"• Items: {len(template['items'])}\n"
-                message += f"• Created: {created_date}\n"
-                if template['description']:
-                    message += f"• Description: {template['description']}\n"
-                message += "\n"
+                message += f"**System Templates** ({len(system_templates)}):\n\n"
+                for template in system_templates:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                    created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
+                    message += f"**{template['name']}**{usage_info}{creator_info}\n"
+                    message += f"• Items: {len(template['items'])}\n"
+                    message += f"• Created: {created_date}\n"
+                    if template['description']:
+                        message += f"• Description: {template['description']}\n"
+                    message += "\n"
         else:
             if user_lang == 'he':
                 message += "לא נמצאו תבניות מערכת לסוג רשימה זה.\n\n"
-        else:
-            message += "No system templates found for this list type.\n\n"
+            else:
+                message += "No system templates found for this list type.\n\n"
         
         keyboard = []
         
@@ -8256,10 +8256,10 @@ class ShoppingBot:
                         InlineKeyboardButton(f"🗑️ מחק", callback_data=f"delete_system_template_{template['id']}")
                     ])
                 else:
-                keyboard.append([
-                    InlineKeyboardButton(f"✏️ Edit {template['name']}", callback_data=f"edit_system_template_{template['id']}"),
-                    InlineKeyboardButton(f"🗑️ Delete", callback_data=f"delete_system_template_{template['id']}")
-                ])
+                    keyboard.append([
+                        InlineKeyboardButton(f"✏️ Edit {template['name']}", callback_data=f"edit_system_template_{template['id']}"),
+                        InlineKeyboardButton(f"🗑️ Delete", callback_data=f"delete_system_template_{template['id']}")
+                    ])
         
         if user_lang == 'he':
             keyboard.extend([
@@ -8268,11 +8268,11 @@ class ShoppingBot:
                 [InlineKeyboardButton("🔙 חזור לניהול תבניות", callback_data=f"template_management_{list_id}")]
             ])
         else:
-        keyboard.extend([
-            [InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_system_template_{list_id}")],
-            [InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_empty_system_template_{list_id}")],
-            [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
-        ])
+            keyboard.extend([
+                [InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_system_template_{list_id}")],
+                [InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_empty_system_template_{list_id}")],
+                [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -8294,7 +8294,7 @@ class ShoppingBot:
         if user_lang == 'he':
             message = "🏛️ **ניהול תבניות מערכת גלובלי**\n\n"
         else:
-        message = "🏛️ **Global System Template Management**\n\n"
+            message = "🏛️ **Global System Template Management**\n\n"
         
         if system_templates:
             if user_lang == 'he':
@@ -8311,23 +8311,23 @@ class ShoppingBot:
                         message += f"• תיאור: {template['description']}\n"
                     message += "\n"
             else:
-            message += f"**System Templates** ({len(system_templates)}):\n\n"
-            for template in system_templates:
-                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
-                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
-                created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
-                list_type_info = f" for {template['list_type']}" if template['list_type'] else ""
-                message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
-                message += f"• Items: {len(template['items'])}\n"
-                message += f"• Created: {created_date}\n"
-                if template['description']:
-                    message += f"• Description: {template['description']}\n"
-                message += "\n"
+                message += f"**System Templates** ({len(system_templates)}):\n\n"
+                for template in system_templates:
+                    usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                    creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                    created_date = template['created_at'][:10] if template['created_at'] else self.get_message(user_id, 'unknown')
+                    list_type_info = f" for {template['list_type']}" if template['list_type'] else ""
+                    message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
+                    message += f"• Items: {len(template['items'])}\n"
+                    message += f"• Created: {created_date}\n"
+                    if template['description']:
+                        message += f"• Description: {template['description']}\n"
+                    message += "\n"
         else:
             if user_lang == 'he':
                 message += "לא נמצאו תבניות מערכת.\n\n"
-        else:
-            message += "No system templates found.\n\n"
+            else:
+                message += "No system templates found.\n\n"
         
         keyboard = []
         
@@ -8348,11 +8348,11 @@ class ShoppingBot:
                 [InlineKeyboardButton("🔙 חזור לניהול תבניות", callback_data="template_management_menu")]
             ])
         else:
-        keyboard.extend([
-            [InlineKeyboardButton("➕ Create from List", callback_data="create_system_template_global")],
-            [InlineKeyboardButton("➕ Create Empty Template", callback_data="create_empty_system_template_global")],
-            [InlineKeyboardButton("🔙 Back to Template Management", callback_data="template_management_menu")]
-        ])
+            keyboard.extend([
+                [InlineKeyboardButton("➕ Create from List", callback_data="create_system_template_global")],
+                [InlineKeyboardButton("➕ Create Empty Template", callback_data="create_empty_system_template_global")],
+                [InlineKeyboardButton("🔙 Back to Template Management", callback_data="template_management_menu")]
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -9478,10 +9478,10 @@ class ShoppingBot:
                 InlineKeyboardButton("➕ צור תבנית ריקה", callback_data=f"create_user_template_from_scratch_{list_id}")
             ])
         else:
-        keyboard.append([
-            InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_user_template_from_list_{list_id}"),
-            InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_user_template_from_scratch_{list_id}")
-        ])
+            keyboard.append([
+                InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_user_template_from_list_{list_id}"),
+                InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_user_template_from_scratch_{list_id}")
+            ])
         
         keyboard.append([InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")])
         
