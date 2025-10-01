@@ -4016,7 +4016,7 @@ class ShoppingBot:
                             continue
                     
                     logging.error("All voice recognition methods failed")
-                                return None
+                    return None
                                 
             except Exception as e:
                 logging.error(f"Voice recognition processing failed: {e}")
