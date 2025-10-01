@@ -521,7 +521,22 @@ For support, contact your family admin.""",
         'rename_duplicate_category': "❌ Error: Category '{new_name}' already exists.",
         'rename_missing_data': "❌ Error: Missing rename data.",
         'rename_cancelled': "❌ Rename cancelled.",
-        'btn_back_to_management': "🔙 Back to Management"
+        'btn_back_to_management': "🔙 Back to Management",
+        # Additional button translations
+        'btn_select_multiple_items': "🎯 Select Multiple Items",
+        'btn_add_to_current_list': "📝 Add to Current List",
+        'btn_add_to_category_permanently': "➕ Add to Category Permanently",
+        'btn_suggest_for_category': "💡 Suggest for Category",
+        'btn_back_to_category': "🏠 Back to Category",
+        'btn_manage_items': "📝 Manage Items",
+        'btn_manage_categories': "🗂️ Manage Categories",
+        'btn_manage_templates': "📋 Manage Templates",
+        'btn_manage_lists': "📂 Manage Lists",
+        'btn_new_item': "➕ New Item",
+        'btn_rename_items': "✏️ Rename Items",
+        'btn_delete_items': "🗑️ Delete Items",
+        'btn_new_category': "📂 New Category",
+        'btn_rename_categories': "✏️ Rename Categories"
     },
     'he': {
         'welcome': "🛒 ברוכים הבאים לבוט רשימת הקניות המשפחתית!\n\nהבוט עוזר לנהל את רשימת הקניות השבועית עם המשפחה.\n\nהשתמש ב-/help כדי לראות את כל הפקודות.",
@@ -885,6 +900,21 @@ For support, contact your family admin.""",
         'rename_duplicate_category': "❌ שגיאה: הקטגוריה '{new_name}' כבר קיימת.",
         'rename_missing_data': "❌ שגיאה: נתוני שינוי שם חסרים.",
         'rename_cancelled': "❌ שינוי השם בוטל.",
-        'btn_back_to_management': "🔙 חזרה לניהול"
+        'btn_back_to_management': "🔙 חזרה לניהול",
+        # Additional button translations
+        'btn_select_multiple_items': "🎯 בחר פריטים מרובים",
+        'btn_add_to_current_list': "📝 הוסף לרשימה הנוכחית",
+        'btn_add_to_category_permanently': "➕ הוסף לקטגוריה לצמיתות",
+        'btn_suggest_for_category': "💡 הצע לקטגוריה",
+        'btn_back_to_category': "🏠 חזרה לקטגוריה",
+        'btn_manage_items': "📝 נהל פריטים",
+        'btn_manage_categories': "🗂️ נהל קטגוריות",
+        'btn_manage_templates': "📋 נהל תבניות",
+        'btn_manage_lists': "📂 נהל רשימות",
+        'btn_new_item': "➕ פריט חדש",
+        'btn_rename_items': "✏️ שנה שמות פריטים",
+        'btn_delete_items': "🗑️ מחק פריטים",
+        'btn_new_category': "📂 קטגוריה חדשה",
+        'btn_rename_categories': "✏️ שנה שמות קטגוריות"
     }
 }
