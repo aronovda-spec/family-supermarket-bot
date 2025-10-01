@@ -1004,7 +1004,7 @@ class ShoppingBot:
             return
         
         # Handle template creation
-        if context.user_data.get('creating_template') or context.user_data.get('creating_system_template'):
+        if context.user_data.get('creating_template') or context.user_data.get('creating_system_template') or context.user_data.get('creating_user_template'):
             await self.process_template_creation(update, context, text)
             return
 
@@ -2322,6 +2322,18 @@ class ShoppingBot:
         elif data.startswith("create_system_template_"):
             list_id = int(data.replace("create_system_template_", ""))
             await self.create_system_template_from_list(update, context, list_id)
+        
+        elif data.startswith("create_empty_system_template_"):
+            list_id = int(data.replace("create_empty_system_template_", ""))
+            await self.create_system_template_from_scratch(update, context, list_id)
+        
+        elif data.startswith("create_user_template_from_list_"):
+            list_id = int(data.replace("create_user_template_from_list_", ""))
+            await self.create_user_template_from_list(update, context, list_id)
+        
+        elif data.startswith("create_user_template_from_scratch_"):
+            list_id = int(data.replace("create_user_template_from_scratch_", ""))
+            await self.create_user_template_from_scratch(update, context, list_id)
         
         elif data.startswith("edit_system_template_"):
             template_id = int(data.replace("edit_system_template_", ""))
@@ -7167,7 +7179,6 @@ class ShoppingBot:
             
             # Add template management options
             keyboard.append([InlineKeyboardButton("💾 Save Current List as Template", callback_data=f"save_template_{list_id}")])
-            keyboard.append([InlineKeyboardButton("⚙️ Template Management", callback_data=f"template_management_{list_id}")])
             keyboard.append([InlineKeyboardButton("🔙 Back to List", callback_data=f"list_menu_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7552,11 +7563,44 @@ class ShoppingBot:
                 ])
         
         keyboard.extend([
-            [InlineKeyboardButton("➕ Create System Template", callback_data=f"create_system_template_{list_id}")],
+            [InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_system_template_{list_id}")],
+            [InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_empty_system_template_{list_id}")],
             [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def create_system_template_from_scratch(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Create an empty system template from scratch"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        # Store template creation data for empty template
+        context.user_data['creating_system_template'] = {
+            'list_id': list_id,
+            'list_name': list_info['name'],
+            'list_type': list_info['list_type'],
+            'items': []  # Empty list
+        }
+        
+        print(f"DEBUG: Set creating_system_template state: {context.user_data['creating_system_template']}")
+        
+        message = f"🏛️ **Create Empty System Template for {list_info['name']}**\n\n"
+        message += "This will create an empty system template that you can customize by adding items manually.\n\n"
+        message += "Please enter a name for the new system template:"
+        
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data=f"system_template_management_{list_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
 
     async def create_system_template_from_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
@@ -7601,6 +7645,76 @@ class ShoppingBot:
         message += "Please enter a name for this system template:"
         
         await update.callback_query.edit_message_text(message, parse_mode='Markdown')
+
+    async def create_user_template_from_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Create a user template from current list"""
+        user_id = update.effective_user.id
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        # Get current list items
+        items = self.db.get_shopping_list_by_id(list_id)
+        if not items:
+            await update.callback_query.edit_message_text("❌ List is empty. Cannot create template from empty list.")
+            return
+        
+        # Store template creation data
+        context.user_data['creating_user_template'] = {
+            'list_id': list_id,
+            'list_name': list_info['name'],
+            'list_type': list_info['list_type'],
+            'items': items
+        }
+        
+        message = f"👤 **Create My Template from {list_info['name']}**\n\n"
+        message += f"**Current List Items** ({len(items)}):\n"
+        for item in items[:10]:  # Show first 10 items
+            message += f"• {item['name']}"
+            if item['notes']:
+                message += f" ({item['notes']})"
+            message += "\n"
+        
+        if len(items) > 10:
+            message += f"... and {len(items) - 10} more items\n"
+        
+        message += "\n**This template will be private to you.**\n\n"
+        message += "Please enter a name for this template:"
+        
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data=f"manage_my_templates_{list_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def create_user_template_from_scratch(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Create an empty user template from scratch"""
+        user_id = update.effective_user.id
+        
+        list_info = self.db.get_list_by_id(list_id)
+        if not list_info:
+            await update.callback_query.edit_message_text("❌ List not found.")
+            return
+        
+        # Store template creation data for empty template
+        context.user_data['creating_user_template'] = {
+            'list_id': list_id,
+            'list_name': list_info['name'],
+            'list_type': list_info['list_type'],
+            'items': []  # Empty list
+        }
+        
+        print(f"DEBUG: Set creating_user_template state: {context.user_data['creating_user_template']}")
+        
+        message = f"👤 **Create Empty My Template for {list_info['name']}**\n\n"
+        message += "This will create an empty template that you can customize by adding items manually.\n\n"
+        message += "Please enter a name for the new template:"
+        
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data=f"manage_my_templates_{list_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
     async def edit_system_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
         """Edit a system template"""
@@ -8147,19 +8261,27 @@ class ShoppingBot:
         """Process template creation from user input"""
         user_id = update.effective_user.id
         
-        # Check if creating regular template or system template
+        # Check if creating regular template, system template, or user template
         template_data = context.user_data.get('creating_template')
         system_template_data = context.user_data.get('creating_system_template')
+        user_template_data = context.user_data.get('creating_user_template')
         
-        if not template_data and not system_template_data:
+        print(f"DEBUG: process_template_creation called with name: {template_name}")
+        print(f"DEBUG: template_data: {template_data}")
+        print(f"DEBUG: system_template_data: {system_template_data}")
+        print(f"DEBUG: user_template_data: {user_template_data}")
+        
+        if not template_data and not system_template_data and not user_template_data:
             await update.message.reply_text("❌ Template creation data not found.")
             return
         
         # Determine template type
         is_system_template = system_template_data is not None
-        data = system_template_data if is_system_template else template_data
+        is_user_template = user_template_data is not None
+        data = system_template_data if is_system_template else (user_template_data if is_user_template else template_data)
         
         # Create template
+        print(f"DEBUG: Creating template with data: {data}")
         template_id = self.db.create_template(
             name=template_name.strip(),
             description=f"Template created from {data['list_name']}",
@@ -8172,21 +8294,36 @@ class ShoppingBot:
             created_by=user_id,
             is_system_template=is_system_template
         )
+        print(f"DEBUG: Template created with ID: {template_id}")
         
         if template_id:
-            template_type = "System Template" if is_system_template else "Template"
+            if is_system_template:
+                template_type = "System Template"
+                type_description = "System Template (available to all users)"
+            elif is_user_template:
+                template_type = "My Template"
+                type_description = "My Template (private to you)"
+            else:
+                template_type = "Template"
+                type_description = "Template"
+                
             message = f"✅ **{template_type} Created Successfully!**\n\n"
             message += f"Template: **{template_name}**\n"
             message += f"Items: {len(data['items'])}\n"
             message += f"List Type: {data['list_type']}\n"
-            if is_system_template:
-                message += f"Type: System Template (available to all users)\n"
+            message += f"Type: {type_description}\n"
             message += "\nYou can now use this template in the Templates menu!"
             
-            keyboard = [
-                [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{data['list_id']}")],
-                [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
-            ]
+            if is_user_template:
+                keyboard = [
+                    [InlineKeyboardButton("📝 Manage My Templates", callback_data=f"manage_my_templates_{data['list_id']}")],
+                    [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
+                ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{data['list_id']}")],
+                    [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -8196,6 +8333,7 @@ class ShoppingBot:
         # Clear template creation state
         context.user_data.pop('creating_template', None)
         context.user_data.pop('creating_system_template', None)
+        context.user_data.pop('creating_user_template', None)
 
     # User Template Management Methods
     async def show_manage_my_templates(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
@@ -8236,6 +8374,12 @@ class ShoppingBot:
                 InlineKeyboardButton(f"✏️ Edit {template['name'][:15]}", callback_data=f"edit_user_template_{template['id']}"),
                 InlineKeyboardButton(f"🗑️ Delete", callback_data=f"delete_user_template_{template['id']}")
             ])
+        
+        # Add creation buttons
+        keyboard.append([
+            InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_user_template_from_list_{list_id}"),
+            InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_user_template_from_scratch_{list_id}")
+        ])
         
         keyboard.append([InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")])
         
