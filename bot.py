@@ -7713,7 +7713,7 @@ class ShoppingBot:
                 message = f"📝 **תבניות עבור {list_info['name']}**\n\nאין תבניות זמינות לסוג רשימה זה עדיין."
                 back_to_list_text = "🔙 חזור לרשימה"
             else:
-            message = f"📝 **Templates for {list_info['name']}**\n\nNo templates available for this list type yet."
+                message = f"📝 **Templates for {list_info['name']}**\n\nNo templates available for this list type yet."
                 back_to_list_text = "🔙 Back to List"
             keyboard = [[InlineKeyboardButton(back_to_list_text, callback_data=f"list_menu_{list_id}")]]
         else:
