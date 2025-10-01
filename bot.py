@@ -7720,9 +7720,9 @@ class ShoppingBot:
             if user_lang == 'he':
                 message = f"📝 **תבניות עבור {list_info['name']}**\n\n"
                 message += f"תבניות זמינות ({len(templates)}):\n\n"
-        else:
-            message = f"📝 **Templates for {list_info['name']}**\n\n"
-            message += f"Available templates ({len(templates)}):\n\n"
+            else:
+                message = f"📝 **Templates for {list_info['name']}**\n\n"
+                message += f"Available templates ({len(templates)}):\n\n"
             
             keyboard = []
             for template in templates:  # Show all templates
