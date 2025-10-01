@@ -392,7 +392,41 @@ class ShoppingBot:
             'Sneakers': 'נעלי ספורט',
             'Towel': 'מגבת',
             'Headphones': 'אוזניות',
-            'Fitness tracker': 'מעקב כושר'
+            'Fitness tracker': 'מעקב כושר',
+            'Cardboard boxes': 'קופסאות קרטון',
+            'Packing tape': 'סרט אריזה',
+            'Bubble wrap': 'נייר בועות',
+            'Packing peanuts': 'בוטני אריזה',
+            'Moving blankets': 'שמיכות מעבר',
+            'Labels': 'תוויות',
+            'Rope': 'חבל',
+            'Tarp': 'יריעת פלסטיק',
+            'Dip': 'מטבל',
+            'Soft drinks': 'משקאות קלים',
+            'Juice': 'מיץ',
+            'Ice cream': 'גלידה',
+            'Paper plates': 'צלחות נייר',
+            'Napkins': 'מפיות',
+            'Pet food': 'אוכל לחיות מחמד',
+            'All-purpose cleaner': 'ניקוי רב תכליתי',
+            'Glass cleaner': 'ניקוי זכוכית',
+            'Floor cleaner': 'ניקוי רצפות',
+            'Sponges': 'ספוגים',
+            'Microfiber cloths': 'בדים מיקרופייבר',
+            'Trash bags': 'שקיות זבל',
+            'Vacuum bags': 'שקיות שואב אבק',
+            'Dusting spray': 'תרסיס ניקוי אבק',
+            'Bleach': 'אקונומיקה',
+            'Rubber gloves': 'כפפות גומי',
+            'Sugar': 'סוכר',
+            'Salt': 'מלח',
+            'Toothbrush': 'מברשת שיניים',
+            'Power bank': 'בנק כוח',
+            'Laptop': 'מחשב נייד',
+            'Dress shoes': 'נעליים רשמיות',
+            'Laptop charger': 'מטען מחשב נייד',
+            'Business cards': 'כרטיסי ביקור',
+            'Travel adapter': 'מתאם נסיעות'
         }
         
         translated_items = []
@@ -1859,10 +1893,6 @@ class ShoppingBot:
             await query.answer("📂 Loading list management options...")
             await self.show_manage_lists(update, context)
         
-        elif data == "add_hebrew_translations":
-            # Show immediate feedback
-            await query.answer("🇮🇱 Adding Hebrew translations...")
-            await self.add_hebrew_translations(update, context)
         
         elif data == "rename_items_admin":
             # Show immediate feedback
@@ -5856,7 +5886,6 @@ class ShoppingBot:
             [InlineKeyboardButton(f"{self.get_message(user_id, 'btn_manage_categories')} ({category_suggestions_pending})", callback_data="manage_categories")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_templates'), callback_data="template_management_menu")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists_admin")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_add_hebrew_translations'), callback_data="add_hebrew_translations")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         
@@ -7597,47 +7626,6 @@ class ShoppingBot:
         # Return to admin management menu
         await self.show_admin_management_menu(update, context)
 
-    async def add_hebrew_translations(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Add Hebrew translations to existing system templates"""
-        user_id = update.effective_user.id
-        
-        if not self.db.is_user_admin(user_id):
-            if update.message:
-                await update.message.reply_text(self.get_message(user_id, 'admin_only'))
-            elif update.callback_query:
-                await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
-            return
-        
-        try:
-            # Add Hebrew translations to templates
-            success = self.db.add_hebrew_translations_to_templates()
-            
-            if success:
-                message = "✅ **Hebrew translations added successfully!**\n\nAll templates (system and user-created) now have Hebrew translations for names, descriptions, and items."
-            else:
-                message = "❌ **Error adding Hebrew translations**\n\nPlease check the logs for more details."
-            
-            keyboard = [
-                [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            if update.callback_query:
-                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-            else:
-                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-                
-        except Exception as e:
-            error_message = f"❌ **Error adding Hebrew translations**\n\nError: {str(e)}"
-            keyboard = [
-                [InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            if update.callback_query:
-                await update.callback_query.edit_message_text(error_message, reply_markup=reply_markup, parse_mode='Markdown')
-            else:
-                await update.message.reply_text(error_message, reply_markup=reply_markup, parse_mode='Markdown')
 
     async def process_item_rename(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Process item rename"""
