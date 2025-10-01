@@ -174,11 +174,13 @@ MESSAGES = {
 • **View List** - See all items in current list
 • **Summary** - Formatted report with categories and notes
 • **My Items** - See items you personally added
+• **Manage My Lists** - Edit, delete, and manage your own lists
 • **Export** - Generate shareable list (Admin only)
 
 **🔍 Advanced Features:**
 • **Language Support** - English/Hebrew interface
 • **Item Suggestions** - Suggest new items for categories
+• **Category Suggestions** - Suggest new categories
 • **Broadcast Messages** - Send messages to all family members
 • **Maintenance Mode** - Scheduled list resets (Supermarket only)
 
@@ -198,6 +200,8 @@ MESSAGES = {
 3. Add notes if needed (quantities, brands)
 4. Use "Search" to find specific items
 5. View your list anytime with "View List"
+6. Manage your own lists with "Manage My Lists"
+7. Use "Suggestions" to suggest new items or categories
 
 **For Admins:**
 • All regular functions plus admin controls
@@ -540,13 +544,15 @@ For support, contact your family admin.""",
 • **צפה ברשימה** - ראה את כל הפריטים ברשימה הנוכחית
 • **סיכום** - דוח מעוצב עם קטגוריות והערות
 • **הפריטים שלי** - ראה פריטים שהוספת אישית
+• **נהל את הרשימות שלי** - ערוך, מחק ונהל את הרשימות שלך
 • **ייצוא** - צור רשימה לשיתוף (מנהלים בלבד)
 
 **🔍 תכונות מתקדמות:**
 • **תמיכה בשפות** - ממשק עברית/אנגלית
 • **הצעות פריטים** - הצע פריטים חדשים לקטגוריות
+• **הצעות קטגוריות** - הצע קטגוריות חדשות
 • **הודעות שידור** - שלח הודעות לכל בני המשפחה
-• **מצב תחזוקה** - איפוס רשימות מתוזמן (סופר בלבד)
+• **מצב תחזוקה** - איפוס רשימות מתוזמן (רשימת סופר בלבד)
 
 ⚙️ **פונקציות מנהל:**
 • **ניהול משתמשים** - הוסף/הסר משתמשים מורשים
@@ -564,6 +570,8 @@ For support, contact your family admin.""",
 3. הוסף הערות אם נדרש (כמויות, מותגים)
 4. השתמש ב"חיפוש" כדי למצוא פריטים ספציפיים
 5. צפה ברשימה שלך בכל עת עם "צפה ברשימה"
+6. נהל את הרשימות שלך עם "נהל את הרשימות שלי"
+7. השתמש ב"הצעות" כדי להציע פריטים או קטגוריות חדשות
 
 **למנהלים:**
 • כל הפונקציות הרגילות בתוספת בקרות מנהל
