@@ -297,16 +297,16 @@ class ShoppingBot:
         # Create keyboard with list buttons
         keyboard = []
         
-        # Separate supermarket list from other lists
+        # Separate supermarket list from shared lists
         supermarket_list = None
-        other_lists = []
+        shared_lists = []
         
         for list_info in all_lists:
             list_name = list_info['name']
             if list_info['list_type'] == 'supermarket':
                 supermarket_list = f"🛒 {list_name}"
-            else:
-                other_lists.append(f"📋 {list_name}")
+            elif list_info['list_type'] == 'shared':
+                shared_lists.append(f"📋 {list_name}")
         
         # Get user language to determine positioning
         user_lang = self.get_user_language(user_id)
@@ -317,9 +317,9 @@ class ShoppingBot:
         if supermarket_list:
             if user_lang == 'he':
                 # Hebrew: Supermarket on the right
-                if other_lists:
-                    # Add other lists first, then supermarket
-                    list_buttons.extend(other_lists)
+                if shared_lists:
+                    # Add shared lists first, then supermarket
+                    list_buttons.extend(shared_lists)
                     list_buttons.append(supermarket_list)
                 else:
                     # Only supermarket list
@@ -327,10 +327,10 @@ class ShoppingBot:
             else:
                 # English: Supermarket on the left
                 list_buttons.append(supermarket_list)
-                list_buttons.extend(other_lists)
+                list_buttons.extend(shared_lists)
         else:
-            # No supermarket list, just add other lists
-            list_buttons.extend(other_lists)
+            # No supermarket list, just add shared lists
+            list_buttons.extend(shared_lists)
         
         # Add list buttons in rows of 2
         for i in range(0, len(list_buttons), 2):
@@ -2180,6 +2180,12 @@ class ShoppingBot:
             list_name = context.user_data.get('new_list_name')
             prompt_text = self.get_message(update.effective_user.id, 'create_list_description_input').format(list_name=list_name)
             await query.edit_message_text(prompt_text)
+        
+        elif data == "create_shared_list":
+            await self.show_create_list_prompt(update, context, 'shared')
+        
+        elif data == "create_personal_list":
+            await self.show_create_list_prompt(update, context, 'personal')
         
         elif data == "skip_description":
             await self.process_list_description(update, context, None)
@@ -4068,19 +4074,41 @@ class ShoppingBot:
             await update.message.reply_text(self.get_message(update.effective_user.id, 'not_registered'))
             return
         
-        await self.show_create_list_prompt(update, context)
+        await self.show_list_type_selection(update, context)
     
-    async def show_create_list_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def show_list_type_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show list type selection (Shared List vs My List)"""
+        user_id = update.effective_user.id
+        
+        keyboard = [
+            [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
+            [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = "📋 **Create New List**\n\nChoose the type of list you want to create:\n\n🌐 **Shared List** - Visible to all admins and authorized users\n👤 **My List** - Only visible to you"
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def show_create_list_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_type: str = 'custom'):
         """Show create list prompt"""
         user_id = update.effective_user.id
         context.user_data['waiting_for_list_name'] = True
+        context.user_data['new_list_type'] = list_type
         
-        prompt_text = self.get_message(user_id, 'create_list_prompt')
+        if list_type == 'shared':
+            prompt_text = "🌐 **Create Shared List**\n\nEnter a name for your shared list:"
+        else:  # personal
+            prompt_text = "👤 **Create My List**\n\nEnter a name for your personal list:"
         
         if update.message:
-            await update.message.reply_text(prompt_text)
+            await update.message.reply_text(prompt_text, parse_mode='Markdown')
         elif update.callback_query:
-            await update.callback_query.edit_message_text(prompt_text)
+            await update.callback_query.edit_message_text(prompt_text, parse_mode='Markdown')
     
     async def process_list_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_name: str):
         """Process list name input"""
@@ -4106,14 +4134,20 @@ class ShoppingBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        prompt_text = self.get_message(update.effective_user.id, 'create_list_description').format(list_name=list_name)
-        await update.message.reply_text(prompt_text, reply_markup=reply_markup)
+        list_type = context.user_data.get('new_list_type', 'custom')
+        if list_type == 'shared':
+            prompt_text = f"🌐 **Shared List: {list_name}**\n\nWould you like to add a description?"
+        else:  # personal
+            prompt_text = f"👤 **My List: {list_name}**\n\nWould you like to add a description?"
+        
+        await update.message.reply_text(prompt_text, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def process_list_description(self, update: Update, context: ContextTypes.DEFAULT_TYPE, description: str):
         """Process list description input"""
         context.user_data['waiting_for_list_description'] = False
         
         list_name = context.user_data.get('new_list_name')
+        list_type = context.user_data.get('new_list_type', 'custom')
         description = description.strip() if description else None
         
         # Create the list
@@ -4121,7 +4155,7 @@ class ShoppingBot:
             name=list_name,
             description=description,
             created_by=update.effective_user.id,
-            list_type='custom'
+            list_type=list_type
         )
         
         if list_id:
@@ -4151,18 +4185,21 @@ class ShoppingBot:
         await self.show_my_lists(update, context)
     
     async def show_my_lists(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show user's lists"""
+        """Show user's personal lists"""
         user_id = update.effective_user.id
         user_lists = self.db.get_user_lists(user_id)
         
-        if not user_lists:
-            message = self.get_message(user_id, 'my_lists_empty')
+        # Filter to show only personal lists
+        personal_lists = [list_info for list_info in user_lists if list_info['list_type'] == 'personal']
+        
+        if not personal_lists:
+            message = "👤 **My Lists**\n\nYou haven't created any personal lists yet.\n\nUse 'New List' → 'My List' to create your first personal list!"
             keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]]
         else:
-            message = self.get_message(user_id, 'my_lists_title')
+            message = "👤 **My Lists**\n\nYour personal lists (only visible to you):"
             keyboard = []
             
-            for list_info in user_lists:
+            for list_info in personal_lists:
                 keyboard.append([InlineKeyboardButton(
                     f"📋 {list_info['name']}",
                     callback_data=f"list_actions_{list_info['id']}"
@@ -4259,10 +4296,6 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_export_list'), callback_data=f"export_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")]
         ]
-        
-        # Only allow deletion for custom lists (not supermarket list)
-        if list_info['list_type'] != 'supermarket':
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_delete_list'), callback_data=f"confirm_delete_list_{list_id}")])
         
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="manage_lists_admin")])
         
@@ -5157,7 +5190,6 @@ class ShoppingBot:
         
         keyboard = [
             [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_users'), callback_data="manage_users")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_lists'), callback_data="manage_lists")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
