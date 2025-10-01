@@ -5658,8 +5658,8 @@ class ShoppingBot:
             if user_lang == 'he':
                 message = "📋 **ניהול תבניות**\n\nבחר רשימה לניהול תבניות:"
                 manage_system_templates_text = "🏛️ נהל תבניות מערכת"
-        else:
-            message = "📋 **Template Management**\n\nSelect a list to manage templates:"
+            else:
+                message = "📋 **Template Management**\n\nSelect a list to manage templates:"
                 manage_system_templates_text = "🏛️ Manage System Templates"
             keyboard = []
             
