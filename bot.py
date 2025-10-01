@@ -3872,7 +3872,7 @@ class ShoppingBot:
             # No results found - offer two options
             keyboard.append([
                 InlineKeyboardButton(
-                    "➕ Add to List",
+                    self.get_message(user_id, 'btn_add_to_current_list'),
                     callback_data="add_to_list_from_search"
                 ),
                 InlineKeyboardButton(
@@ -4365,6 +4365,10 @@ class ShoppingBot:
             [InlineKeyboardButton(self.get_message(user_id, 'btn_export_list'), callback_data=f"export_list_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")]
         ]
+        
+        # Only allow deletion for custom lists (not supermarket list)
+        if list_info['list_type'] != 'supermarket':
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_delete_list'), callback_data=f"confirm_delete_list_{list_id}")])
         
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="manage_lists_admin")])
         
@@ -8783,14 +8787,14 @@ class ShoppingBot:
         
         if template_id:
             if is_system_template:
-                template_type = "System Template"
-                type_description = "System Template (available to all users)"
+                template_type = self.get_message(user_id, 'template_type_system')
+                type_description = self.get_message(user_id, 'template_description_system')
             elif is_user_template:
-                template_type = "My Template"
-                type_description = "My Template (private to you)"
+                template_type = self.get_message(user_id, 'template_type_user')
+                type_description = self.get_message(user_id, 'template_description_user')
             else:
-                template_type = "Template"
-                type_description = "Template"
+                template_type = self.get_message(user_id, 'template_type_generic')
+                type_description = self.get_message(user_id, 'template_description_generic')
                 
             message = f"✅ **{template_type} Created Successfully!**\n\n"
             message += f"Template: **{template_name}**\n"
