@@ -2316,8 +2316,23 @@ class ShoppingBot:
             await self.show_template_management(update, context, list_id)
         
         elif data.startswith("system_template_management_"):
-            list_id = int(data.replace("system_template_management_", ""))
-            await self.show_system_template_management(update, context, list_id)
+            if data == "system_template_management_global":
+                # Global system template management - show all system templates
+                await self.show_system_template_management_global(update, context)
+            else:
+                list_id = int(data.replace("system_template_management_", ""))
+                await self.show_system_template_management(update, context, list_id)
+        
+        elif data.startswith("view_system_template_"):
+            template_id = int(data.replace("view_system_template_", ""))
+            await self.view_system_template(update, context, template_id)
+        
+        elif data == "create_system_template_global":
+            await self.create_system_template_global(update, context)
+        
+        elif data == "create_empty_system_template_global":
+            await self.create_empty_system_template_global(update, context)
+        
         
         elif data.startswith("create_system_template_"):
             list_id = int(data.replace("create_system_template_", ""))
@@ -5175,6 +5190,11 @@ class ShoppingBot:
             message = "📋 **Template Management**\n\nSelect a list to manage templates:"
             keyboard = []
             
+            # Add system template management for admins
+            if self.db.is_user_admin(user_id):
+                keyboard.append([InlineKeyboardButton("🏛️ Manage System Templates", callback_data="system_template_management_global")])
+                keyboard.append([])  # Empty row for spacing
+            
             for list_info in lists:
                 button_text = f"📋 {list_info['name']}"
                 keyboard.append([InlineKeyboardButton(
@@ -7508,9 +7528,7 @@ class ShoppingBot:
             keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
             keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
         
-        # Admin system template management
-        if is_admin and system_templates_for_type:
-            keyboard.append([InlineKeyboardButton("🏛️ Manage System Templates", callback_data=f"system_template_management_{list_id}")])
+        # Admin system template management - moved to main template management menu
         
         keyboard.extend([
             [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
@@ -7570,6 +7588,147 @@ class ShoppingBot:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def show_system_template_management_global(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show global system template management for admins"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Get all system templates (global, not list-specific)
+        system_templates = self.db.get_all_system_templates()
+        
+        message = "🏛️ **Global System Template Management**\n\n"
+        
+        if system_templates:
+            message += f"**System Templates** ({len(system_templates)}):\n\n"
+            for template in system_templates:
+                usage_info = f" ({template['usage_count']} uses)" if template['usage_count'] > 0 else ""
+                creator_info = f" by {template.get('first_name', 'Unknown')}" if template.get('first_name') else ""
+                created_date = template['created_at'][:10] if template['created_at'] else "Unknown"
+                list_type_info = f" for {template['list_type']}" if template['list_type'] else ""
+                message += f"**{template['name']}**{usage_info}{creator_info}{list_type_info}\n"
+                message += f"• Items: {len(template['items'])}\n"
+                message += f"• Created: {created_date}\n"
+                if template['description']:
+                    message += f"• Description: {template['description']}\n"
+                message += "\n"
+        else:
+            message += "No system templates found.\n\n"
+        
+        keyboard = []
+        
+        if system_templates:
+            # Add buttons for each system template
+            for template in system_templates:
+                button_text = f"📝 {template['name']}"
+                keyboard.append([InlineKeyboardButton(
+                    button_text,
+                    callback_data=f"view_system_template_{template['id']}"
+                )])
+        
+        # Add creation options
+        keyboard.extend([
+            [InlineKeyboardButton("➕ Create from List", callback_data="create_system_template_global")],
+            [InlineKeyboardButton("➕ Create Empty Template", callback_data="create_empty_system_template_global")],
+            [InlineKeyboardButton("🔙 Back to Template Management", callback_data="template_management_menu")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def view_system_template(self, update: Update, context: ContextTypes.DEFAULT_TYPE, template_id: int):
+        """View details of a system template"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        template = self.db.get_template_by_id(template_id)
+        if not template or not template['is_system_template']:
+            await update.callback_query.edit_message_text("❌ System template not found.")
+            return
+        
+        message = f"📝 **System Template: {template['name']}**\n\n"
+        
+        if template['description']:
+            message += f"**Description:** {template['description']}\n\n"
+        
+        message += f"**List Type:** {template['list_type']}\n"
+        message += f"**Items:** {len(template['items'])}\n"
+        message += f"**Usage Count:** {template['usage_count']}\n"
+        message += f"**Created:** {template['created_at'][:10] if template['created_at'] else 'Unknown'}\n"
+        message += f"**Created by:** {template.get('first_name', 'Unknown')}\n\n"
+        
+        if template['items']:
+            message += "**Items in template:**\n"
+            for i, item in enumerate(template['items'], 1):
+                message += f"{i}. {item.get('name', 'Unknown item')}\n"
+                if item.get('notes'):
+                    message += f"   📝 {item['notes']}\n"
+        else:
+            message += "**No items in this template.**\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to System Templates", callback_data="system_template_management_global")],
+            [InlineKeyboardButton("🗑️ Delete Template", callback_data=f"delete_system_template_{template_id}")],
+            [InlineKeyboardButton("✏️ Edit Template", callback_data=f"edit_system_template_{template_id}")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def create_system_template_global(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Create a new system template globally"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Set up the conversation state for creating the template
+        context.user_data['creating_system_template'] = {
+            'step': 'name',
+            'is_empty': False,
+            'is_global': True
+        }
+        
+        message = "🏛️ **Create System Template**\n\n"
+        message += "**System templates are available to all users across all lists.**\n\n"
+        message += "Enter a name for the system template:"
+        
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="system_template_management_global")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def create_empty_system_template_global(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Create an empty system template globally"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'admin_only'))
+            return
+        
+        # Set up the conversation state for creating the template
+        context.user_data['creating_system_template'] = {
+            'step': 'name',
+            'is_empty': True,
+            'is_global': True
+        }
+        
+        message = "🏛️ **Create Empty System Template**\n\n"
+        message += "**System templates are available to all users across all lists.**\n\n"
+        message += "Enter a name for the empty system template:"
+        
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="system_template_management_global")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+
 
     async def create_system_template_from_scratch(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Create an empty system template from scratch"""
@@ -7733,20 +7892,20 @@ class ShoppingBot:
         else:
             # Load template from database
             template = self.db.get_template_by_id(template_id)
-            if not template or not template['is_system_template']:
-                await update.callback_query.edit_message_text("❌ System template not found.")
-                return
-            
+        if not template or not template['is_system_template']:
+            await update.callback_query.edit_message_text("❌ System template not found.")
+            return
+        
             template_name = template['name']
             current_items = template['items'].copy()
             
             # Store template editing state
-            context.user_data['editing_template'] = {
-                'template_id': template_id,
+        context.user_data['editing_template'] = {
+            'template_id': template_id,
                 'template_name': template_name,
-                'list_type': template['list_type'],
+            'list_type': template['list_type'],
                 'current_items': current_items
-            }
+        }
         
         message = f"✏️ **Edit Template: {template_name}**\n"
         message += f"Items: {len(current_items)}\n\n"
@@ -7881,9 +8040,9 @@ class ShoppingBot:
                     'current_items': template['items'].copy()
                 }
                 context.user_data['editing_template'] = editing_data
-            else:
-                await update.callback_query.edit_message_text("❌ Template editing session not found.")
-                return
+        else:
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            return
         
         # Store template context for adding items
         context.user_data['adding_to_template'] = template_id
@@ -7957,9 +8116,9 @@ class ShoppingBot:
                     'current_items': template['items'].copy()
                 }
                 context.user_data['editing_template'] = editing_data
-            else:
-                await update.callback_query.edit_message_text("❌ Template editing session not found.")
-                return
+        else:
+            await update.callback_query.edit_message_text("❌ Template editing session not found.")
+            return
         
         # Update template in database
         success = self.db.update_template(
@@ -8054,18 +8213,15 @@ class ShoppingBot:
                     # User template - owner only
                     if template['created_by'] != user_id:
                         await update.callback_query.edit_message_text("❌ You don't have permission to edit this template.")
-                        return
-                
-                editing_data = {
-                    'template_id': template_id,
-                    'template_name': template['name'],
-                    'list_type': template['list_type'],
-                    'current_items': template['items'].copy()
-                }
-                context.user_data['editing_template'] = editing_data
-            else:
-                await update.callback_query.edit_message_text("❌ Template editing session not found.")
-                return
+            return
+        
+        editing_data = {
+            'template_id': template_id,
+            'template_name': template['name'],
+            'list_type': template['list_type'],
+            'current_items': template['items'].copy()
+        }
+        context.user_data['editing_template'] = editing_data
         
         # Get category items
         category_items = self.get_category_items(user_id, category_key)
@@ -8282,18 +8438,72 @@ class ShoppingBot:
         
         # Create template
         print(f"DEBUG: Creating template with data: {data}")
-        template_id = self.db.create_template(
-            name=template_name.strip(),
-            description=f"Template created from {data['list_name']}",
-            list_type=data['list_type'],
-            items=[{
-                'name': item['name'],
-                'category': item['category'],
-                'notes': item['notes']
-            } for item in data['items']],
-            created_by=user_id,
-            is_system_template=is_system_template
-        )
+        
+        # Handle empty templates
+        if data.get('is_empty'):
+            # Empty system template
+            if data.get('is_global'):
+                # Global system template - no specific list type
+                template_id = self.db.create_template(
+                    name=template_name.strip(),
+                    description="Empty system template (available for all lists)",
+                    list_type="system",  # Special list type for global system templates
+                    items=[],  # Empty items list
+                    created_by=user_id,
+                    is_system_template=is_system_template
+                )
+            else:
+                # List-specific empty template
+                template_id = self.db.create_template(
+                    name=template_name.strip(),
+                    description=f"Empty system template for {data['list_type']}",
+                    list_type=data['list_type'],
+                    items=[],  # Empty items list
+                    created_by=user_id,
+                    is_system_template=is_system_template
+                )
+        else:
+            # Template from existing list
+            if data.get('is_global'):
+                # Global system template from list items
+                if data.get('is_empty'):
+                    # Empty global template
+                    template_id = self.db.create_template(
+                        name=template_name.strip(),
+                        description="Empty system template (available for all lists)",
+                        list_type="system",  # Special list type for global system templates
+                        items=[],
+                        created_by=user_id,
+                        is_system_template=is_system_template
+                    )
+                else:
+                    # Global template from list items
+                    template_id = self.db.create_template(
+                        name=template_name.strip(),
+                        description=f"System template created from {data.get('list_name', 'list')} (available for all lists)",
+                        list_type="system",  # Special list type for global system templates
+                        items=[{
+                            'name': item['name'],
+                            'category': item['category'],
+                            'notes': item['notes']
+                        } for item in data.get('items', [])],
+                        created_by=user_id,
+                        is_system_template=is_system_template
+                    )
+            else:
+                # List-specific template
+                template_id = self.db.create_template(
+                    name=template_name.strip(),
+                    description=f"Template created from {data['list_name']}",
+                    list_type=data['list_type'],
+                    items=[{
+                        'name': item['name'],
+                        'category': item['category'],
+                        'notes': item['notes']
+                    } for item in data['items']],
+                    created_by=user_id,
+                    is_system_template=is_system_template
+                )
         print(f"DEBUG: Template created with ID: {template_id}")
         
         if template_id:
@@ -8309,8 +8519,19 @@ class ShoppingBot:
                 
             message = f"✅ **{template_type} Created Successfully!**\n\n"
             message += f"Template: **{template_name}**\n"
-            message += f"Items: {len(data['items'])}\n"
-            message += f"List Type: {data['list_type']}\n"
+            
+            if data.get('is_empty'):
+                message += f"Items: 0 (Empty template)\n"
+            else:
+                if data.get('is_global'):
+                    message += f"Items: {len(data.get('items', []))}\n"
+                else:
+                    message += f"Items: {len(data['items'])}\n"
+            
+            if data.get('is_global'):
+                message += f"List Type: System (Global)\n"
+            else:
+                message += f"List Type: {data['list_type']}\n"
             message += f"Type: {type_description}\n"
             message += "\nYou can now use this template in the Templates menu!"
             
@@ -8319,14 +8540,23 @@ class ShoppingBot:
                     [InlineKeyboardButton("📝 Manage My Templates", callback_data=f"manage_my_templates_{data['list_id']}")],
                     [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
                 ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            elif is_system_template:
+                # System templates - show global management
+                keyboard = [
+                    [InlineKeyboardButton("🏛️ Manage System Templates", callback_data="system_template_management_global")],
+                    [InlineKeyboardButton("📋 Back to Templates", callback_data="template_management_menu")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             else:
                 keyboard = [
                     [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{data['list_id']}")],
                     [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
                 ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
         else:
             await update.message.reply_text("❌ Failed to create template. Please try again.")
         
