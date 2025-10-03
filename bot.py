@@ -1972,7 +1972,7 @@ class ShoppingBot:
 
         # Get user ID first
         user_id = update.effective_user.id
-        
+
         # Group items by category
         categorized_items = {}
         for item in items:
@@ -4476,7 +4476,7 @@ class ShoppingBot:
             else:
                 if user_lang == 'he':
                     prompt_text += f"\n\n⚠️ {self.get_message(user_id, 'voice_recognition_limited_hebrew')}"
-                    if availability_status['reason']:
+                if availability_status['reason']:
                         if availability_status['reason'].startswith('speech_recognition_library_not_installed'):
                             reason_text = self.get_message(user_id, 'speech_recognition_library_not_installed_hebrew')
                         else:
@@ -6051,11 +6051,11 @@ class ShoppingBot:
                                 not_found_button = not_found_text   # Regular not found button
                             
                             # Add the row with 3 buttons
-                            keyboard.append([
+                        keyboard.append([
                                 InlineKeyboardButton(item_name_button, callback_data="noop"),  # Non-interactive item name
                                 InlineKeyboardButton(bought_button, callback_data=f"mark_bought_{item['id']}"),
                                 InlineKeyboardButton(not_found_button, callback_data=f"mark_not_found_{item['id']}")
-                            ])
+                        ])
                         
                         first_category = False
             
@@ -7114,25 +7114,25 @@ class ShoppingBot:
                     if category not in categories:
                         categories[category] = []
                     categories[category].append(item)
-                
-                message = f"📋 {list_info['name']} Summary\n\n"
-                message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
-                
-                for category, category_items in categories.items():
-                    category_name = self.get_category_name(user_id, category) or category
-                    message += f"{category_name} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
-                    for item in category_items:
-                        translated_name = self.translate_item_name(item['name'], user_id)
-                        message += f"• {translated_name}"
-                        if item['notes']:
-                            message += f" ({item['notes']})"
-                        
-                        # Add delete command for admins
-                        if self.db.is_user_admin(user_id):
-                            message += f"\n  🗑️ /delete_{item['id']}"
-                        
-                        message += "\n"
+            
+            message = f"📋 {list_info['name']} Summary\n\n"
+            message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
+            
+            for category, category_items in categories.items():
+                category_name = self.get_category_name(user_id, category) or category
+                message += f"{category_name} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
+                for item in category_items:
+                    translated_name = self.translate_item_name(item['name'], user_id)
+                    message += f"• {translated_name}"
+                    if item['notes']:
+                        message += f" ({item['notes']})"
+                    
+                    # Add delete command for admins
+                    if self.db.is_user_admin(user_id):
+                        message += f"\n  🗑️ /delete_{item['id']}"
+                    
                     message += "\n"
+                message += "\n"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
