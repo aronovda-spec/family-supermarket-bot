@@ -38,6 +38,8 @@ class Database:
                         list_type TEXT DEFAULT 'custom',
                         created_by INTEGER,
                         is_active BOOLEAN DEFAULT TRUE,
+                        is_frozen BOOLEAN DEFAULT FALSE,
+                        frozen_at TIMESTAMP DEFAULT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (created_by) REFERENCES users (user_id)
                     )
@@ -161,6 +163,31 @@ class Database:
                         print("list_id column already exists in item_suggestions table")
                     else:
                         print(f"Error adding list_id column to item_suggestions: {e}")
+                
+                # Migration: Add frozen fields to lists table if they don't exist
+                try:
+                    cursor.execute('ALTER TABLE lists ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE')
+                    cursor.execute('ALTER TABLE lists ADD COLUMN frozen_at TIMESTAMP DEFAULT NULL')
+                    print("Added frozen fields to lists table")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        print("Frozen columns already exist in lists table")
+                    else:
+                        print(f"Error adding frozen columns to lists table: {e}")
+                
+                # Create item_status_tracking table for frozen mode functionality
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS item_status_tracking (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        status TEXT NOT NULL CHECK (status IN ('bought', 'not_found', 'pending')),
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (item_id) REFERENCES shopping_items (id) ON DELETE CASCADE,
+                        FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
+                        UNIQUE(item_id, user_id)
+                    )
+                ''')
                 
                 # Migration: Add Hebrew columns to templates table
                 try:
@@ -3060,3 +3087,159 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting custom shared list users: {e}")
             return []
+    
+    def freeze_list(self, list_id: int) -> bool:
+        """Freeze a list (cannot add/remove items anymore)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE lists 
+                    SET is_frozen = TRUE, frozen_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (list_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error freezing list: {e}")
+            return False
+    
+    def unfreeze_list(self, list_id: int) -> bool:
+        """Unfreeze a list (restore normal functionality)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE lists 
+                    SET is_frozen = FALSE, frozen_at = NULL
+                    WHERE id = ?
+                ''', (list_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error unfreezing list: {e}")
+            return False
+    
+    def is_list_frozen(self, list_id: int) -> bool:
+        """Check if a list is frozen"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT is_frozen FROM lists WHERE id = ?', (list_id,))
+                result = cursor.fetchone()
+                return result[0] if result else False
+        except Exception as e:
+            logging.error(f"Error checking if list is frozen: {e}")
+            return False
+    
+    def get_frozen_info(self, list_id: int) -> Dict:
+        """Get frozen information for a list"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT is_frozen, frozen_at FROM lists WHERE id = ?
+                ''', (list_id,))
+                result = cursor.fetchone()
+                if result:
+                    return {
+                        'is_frozen': result[0],
+                        'frozen_at': result[1]
+                    }
+                return {'is_frozen': False, 'frozen_at': None}
+        except Exception as e:
+            logging.error(f"Error getting frozen info: {e}")
+            return {'is_frozen': False, 'frozen_at': None}
+    
+    def mark_item_status(self, item_id: int, status: str, user_id: int) -> bool:
+        """Mark an item as bought or not found"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # First check if this item exists and get its list_id
+                cursor.execute('SELECT id, list_id FROM shopping_items WHERE id = ?', (item_id,))
+                item_result = cursor.fetchone()
+                
+                if not item_result:
+                    return False
+                
+                # Check if the list is frozen (only frozen lists allow status marking)
+                if not self.is_list_frozen(item_result[1]):
+                    return False
+                
+                # Insert or update item status
+                cursor.execute('''
+                    INSERT OR REPLACE INTO item_status_tracking 
+                    (item_id, user_id, status, updated_at) 
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (item_id, user_id, status))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error marking item status: {e}")
+            return False
+    
+    def get_item_status(self, item_id: int, user_id: int) -> str:
+        """Get item status for a specific user"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT status FROM item_status_tracking 
+                    WHERE item_id = ? AND user_id = ?
+                ''', (item_id, user_id))
+                result = cursor.fetchone()
+                return result[0] if result else 'pending'
+        except Exception as e:
+            logging.error(f"Error getting item status: {e}")
+            return 'pending'
+    
+    def get_shopping_item_by_id(self, item_id: int) -> Dict:
+        """Get shopping item by ID"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, name, notes, category, list_id 
+                    FROM shopping_items WHERE id = ?
+                ''', (item_id,))
+                result = cursor.fetchone()
+                
+                if result:
+                    return {
+                        'id': result[0],
+                        'name': result[1],
+                        'notes': result[2],
+                        'category': result[3],
+                        'list_id': result[4]
+                    }
+                return None
+        except Exception as e:
+            logging.error(f"Error getting shopping item by ID: {e}")
+            return None
+    
+    def clear_item_statuses_for_list(self, list_id: int) -> bool:
+        """Clear all item status tracking for a specific list"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get all items in this list
+                cursor.execute('SELECT id FROM shopping_items WHERE list_id = ?', (list_id,))
+                item_ids = [row[0] for row in cursor.fetchall()]
+                
+                if item_ids:
+                    # Clear status tracking for all items in this list
+                    placeholders = ','.join('?' for _ in item_ids)
+                    cursor.execute(f'''
+                        DELETE FROM item_status_tracking 
+                        WHERE item_id IN ({placeholders})
+                    ''', item_ids)
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error clearing item statuses for list: {e}")
+            return False
