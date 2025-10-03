@@ -224,6 +224,30 @@ CATEGORIES = {
             'en': ['Rice', 'Pasta', 'Bread', 'Cereal', 'Oats', 'Quinoa', 'Flour', 'Barley'],
             'he': ['אורז', 'פסטה', 'לחם', 'דגנים', 'שיבולת שועל', 'קינואה', 'קמח', 'שעורה']
         }
+    },
+    'household': {
+        'emoji': '🏠',
+        'name': {'en': 'Household', 'he': 'מוצרי בית'},
+        'items': {
+            'en': ['Toilet paper', 'Paper towels', 'Detergent', 'Soap', 'Shampoo', 'Toothpaste', 'Napkins', 'Paper plates'],
+            'he': ['נייר טואלט', 'מגבות נייר', 'אבקת כביסה', 'סבון', 'שמפו', 'משחת שיניים', 'מפיות', 'צלחות נייר']
+        }
+    },
+    'office': {
+        'emoji': '💼',
+        'name': {'en': 'Office', 'he': 'משרד'},
+        'items': {
+            'en': ['Business cards', 'Notebook', 'Pen', 'Paper', 'Stapler', 'Tape', 'Markers', 'Folders'],
+            'he': ['כרטיסי ביקור', 'מחברת', 'עט', 'נייר', 'מהדק', 'סרט', 'טושים', 'תיקיות']
+        }
+    },
+    'clothing': {
+        'emoji': '👕',
+        'name': {'en': 'Clothing', 'he': 'ביגוד'},
+        'items': {
+            'en': ['Dress shirt', 'Dress shoes', 'Suit', 'Tie', 'Socks', 'Underwear', 'Jeans', 'T-shirt'],
+            'he': ['חולצה רשמית', 'נעליים רשמיות', 'חליפה', 'עניבה', 'גרביים', 'תחתונים', 'ג\'ינס', 'חולצת טי']
+        }
     }
 }
 
