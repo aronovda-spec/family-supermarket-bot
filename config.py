@@ -1175,6 +1175,29 @@ For support, contact your family admin.""",
         # Maintenance mode Hebrew translations
         'maintenance_reset_whole_hebrew': "🔄 אפס את כל הרשימה",
         'maintenance_reset_bought_hebrew': "✅ אפס רק פריטים שנקנו",
-        'maintenance_not_yet_hebrew': "❌ עדיין לא"
+        'maintenance_not_yet_hebrew': "❌ עדיין לא",
+        
+        # Additional button text checks Hebrew translations
+        'btn_custom_shared_list_hebrew': "🤝 רשימה משותפת",
+        'btn_manage_my_lists_hebrew': "📂 נהל את הרשימות שלי",
+        
+        # Template management UI Hebrew translations  
+        'no_lists_found_template_hebrew': "❌ לא נמצאו רשימות.",
+        'back_to_management_template_hebrew': "🔙 חזור לניהול",
+        'template_management_global_hebrew': "📋 **ניהול תבניות**",
+        'template_management_message_hebrew': "בחר רשימה לניהול תבניות:",
+        'my_template_stats_hebrew': "📊 סטטיסטיקות התבניות שלי",
+        'manage_my_templates_button_hebrew': "⚙️ נהל את התבניות שלי",
+        'create_from_current_list_button_hebrew': "➕ צור מהרשימה הנוכחית", 
+        'create_empty_template_button_hebrew': "➕ צור תבנית ריקה",
+        'create_from_list_global_hebrew': "➕ צור מרשימה",
+        'back_to_template_management_hebrew': "🔙 חזור לניהול תבניות",
+        'back_to_template_management_menu_hebrew': "🔙 חזור לניהול תבניות",
+        'template_preview_title_hebrew': "📋 תצוגה מקדימה של תבנית {template_name}",
+        'choose_template_usage_hebrew': "💡 בחר איך להשתמש בתבנית זו:",
+        'add_all_items_button_hebrew': "✅ הוסף את כל הפריטים",
+        'select_items_button_hebrew': "🎯 בחר פריטים",
+        'replace_list_button_hebrew': "🔄 החלף רשימה", 
+        'back_to_templates_button_hebrew': "🔙 חזור לתבניות"
     }
 }
