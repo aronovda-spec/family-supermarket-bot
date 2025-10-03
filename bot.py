@@ -6897,7 +6897,12 @@ class ShoppingBot:
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = f"⚙️ **Management** ({total_pending})\n\nChoose what you want to manage:"
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"⚙️ **{self.get_message(user_id, 'back_to_management_title_hebrew')}** ({total_pending})\n\n{self.get_message(user_id, 'choose_what_to_manage_title_hebrew')}"
+        else:
+            message = f"⚙️ **Management** ({total_pending})\n\nChoose what you want to manage:"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -6993,7 +6998,12 @@ class ShoppingBot:
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = "📝 **Manage Items (Admin)**\n\nChoose what you want to manage:"
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"📝 **{self.get_message(user_id, 'manage_items_suggested_title_hebrew')} (מנהל)**\n\n{self.get_message(user_id, 'choose_what_to_manage_title_hebrew')}"
+        else:
+            message = "📝 **Manage Items (Admin)**\n\nChoose what you want to manage:"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -7072,10 +7082,15 @@ class ShoppingBot:
                 callback_data=f"delete_permanent_items_{category['category_key']}"
             )])
         
-        keyboard.append([InlineKeyboardButton("🔙 Back to Management", callback_data="admin_management")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'back_to_management_title_hebrew'), callback_data="admin_management")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = "🗑️ **Delete Permanent Items**\n\nSelect a category to permanently delete items from:"
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"🗑️ **{self.get_message(user_id, 'delete_permanent_items_title_hebrew')}**\n\nבחר קטגוריה למחיקת פריטים קבועים:"
+        else:
+            message = "🗑️ **Delete Permanent Items**\n\nSelect a category to permanently delete items from:"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -7115,7 +7130,7 @@ class ShoppingBot:
         if not available_items:
             message = f"📂 **{category_name}**\n\nAll items in this category have already been deleted."
             
-            keyboard = [[InlineKeyboardButton("🔙 Back to Delete Permanent Items", callback_data="delete_permanent_items")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'back_to_management_title_hebrew'), callback_data="delete_permanent_items")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             if update.message:
@@ -7132,7 +7147,7 @@ class ShoppingBot:
                 callback_data=f"confirm_delete_permanent_item_{category_key}_{item}"
             )])
         
-        keyboard.append([InlineKeyboardButton("🔙 Back to Delete Permanent Items", callback_data="delete_permanent_items")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'back_to_management_title_hebrew'), callback_data="delete_permanent_items")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         message = f"🗑️ **Delete Items from {category_name}**\n\nSelect an item to permanently remove from this category:"
@@ -7450,13 +7465,18 @@ class ShoppingBot:
         user_id = update.effective_user.id
         day = context.user_data.get('maintenance_day', 'Unknown')
         
+        user_lang = self.get_user_language(user_id)
+        
         keyboard = [
             [InlineKeyboardButton("✅ Confirm", callback_data="confirm_maintenance_schedule")],
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel_maintenance_schedule")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        message = f"📅 Confirm Maintenance Schedule\n\nDay: {day}\nTime: {time}\n\nThis will remind you to reset the supermarket list every {day} at {time}."
+        if user_lang == 'he':
+            message = f"📅 {self.get_message(user_id, 'set_schedule_title_hebrew')}\n\nיום: {day}\nשעה: {time}\n\nזה יזכיר לך לאפס את רשימת הסופר כל {day} בשעה {time}."
+        else:
+            message = f"📅 Confirm Maintenance Schedule\n\nDay: {day}\nTime: {time}\n\nThis will remind you to reset the supermarket list every {day} at {time}."
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
         
         # Store the time in context
@@ -7498,8 +7518,12 @@ class ShoppingBot:
         if not maintenance:
             message = self.get_message(user_id, 'maintenance_mode_disabled')
         else:
+            user_lang = self.get_user_language(user_id)
             last_reminder = maintenance['last_reminder'] or 'Never'
-            message = f"📅 Current Maintenance Schedule\n\nDay: {maintenance['scheduled_day']}\nTime: {maintenance['scheduled_time']}\nLast reminder: {last_reminder}\nReminders sent: {maintenance['reminder_count']}"
+            if user_lang == 'he':
+                message = f"📅 {self.get_message(user_id, 'current_maintenance_schedule_title_hebrew')}\n\nיום: {maintenance['scheduled_day']}\nשעה: {maintenance['scheduled_time']}\nתזכורת אחרונה: {last_reminder}\nתזכורות נשלחו: {maintenance['reminder_count']}"
+            else:
+                message = f"📅 Current Maintenance Schedule\n\nDay: {maintenance['scheduled_day']}\nTime: {maintenance['scheduled_time']}\nLast reminder: {last_reminder}\nReminders sent: {maintenance['reminder_count']}"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7515,7 +7539,11 @@ class ShoppingBot:
         if success:
             message = self.get_message(user_id, 'maintenance_disabled')
         else:
-            message = "❌ Error disabling maintenance mode."
+            user_lang = self.get_user_language(user_id)
+            if user_lang == 'he':
+                message = "❌ שגיאה בהשבתת מצב תחזוקה."
+            else:
+                message = "❌ Error disabling maintenance mode."
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -9238,7 +9266,7 @@ class ShoppingBot:
             message += "❌ You don't have any templates for this list type yet.\n\n"
             message += "Create your first template to see statistics here!"
             
-            keyboard = [[InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data=f"template_management_{list_id}")]]
         else:
             # Calculate statistics
             total_templates = len(user_templates_for_type)
@@ -9283,7 +9311,7 @@ class ShoppingBot:
                 usage_info = f" ({template.get('usage_count', 0)} uses)" if template.get('usage_count', 0) > 0 else " (unused)"
                 message += f"• {template['name']} ({len(template['items'])} items){usage_info}\n"
             
-            keyboard = [[InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data=f"template_management_{list_id}")]]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -9371,7 +9399,7 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'manage_my_templates_button_hebrew'), callback_data=f"manage_my_templates_{list_id}")])
             else:
                 keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
-                keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'manage_my_template_title_hebrew'), callback_data=f"manage_my_templates_{list_id}")])
         
         # Admin system template management - moved to main template management menu
         
@@ -9468,7 +9496,7 @@ class ShoppingBot:
             keyboard.extend([
                 [InlineKeyboardButton("➕ Create from Current List", callback_data=f"create_system_template_{list_id}")],
                 [InlineKeyboardButton("➕ Create Empty Template", callback_data=f"create_empty_system_template_{list_id}")],
-                [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
+                [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data=f"template_management_{list_id}")]
             ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -9588,7 +9616,7 @@ class ShoppingBot:
             message += "**No items in this template.**\n"
         
         keyboard = [
-            [InlineKeyboardButton("🔙 Back to System Templates", callback_data="system_template_management_global")],
+            [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data="system_template_management_global")],
             [InlineKeyboardButton("🗑️ Delete Template", callback_data=f"delete_system_template_{template_id}")],
             [InlineKeyboardButton("✏️ Edit Template", callback_data=f"edit_system_template_{template_id}")]
         ]
@@ -10209,7 +10237,7 @@ class ShoppingBot:
             
             if is_system:
                 keyboard = [
-                    [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+                    [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data=f"system_template_management_{list_id}")]
                 ]
             else:
                 keyboard = [
@@ -10244,7 +10272,7 @@ class ShoppingBot:
             
             if is_system:
                 keyboard = [
-                    [InlineKeyboardButton("🔙 Back to System Templates", callback_data=f"system_template_management_{list_id}")]
+                    [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data=f"system_template_management_{list_id}")]
                 ]
             else:
                 keyboard = [
@@ -10788,7 +10816,7 @@ class ShoppingBot:
             
             keyboard = [
                 [InlineKeyboardButton("📝 Manage My Templates", callback_data=f"manage_my_templates_{list_id}")],
-                [InlineKeyboardButton("🔙 Back to Template Management", callback_data=f"template_management_{list_id}")]
+                [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_title_hebrew'), callback_data=f"template_management_{list_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
