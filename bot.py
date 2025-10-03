@@ -2574,9 +2574,13 @@ class ShoppingBot:
         
         
         
+        elif data.startswith("confirm_reset_list_main_"):
+            list_id = int(data.replace("confirm_reset_list_main_", ""))
+            await self.show_reset_options(update, context, list_id, context_type="main")
+        
         elif data.startswith("confirm_reset_list_"):
             list_id = int(data.replace("confirm_reset_list_", ""))
-            await self.show_reset_options(update, context, list_id)
+            await self.show_reset_options(update, context, list_id, context_type="management")
         
         elif data.startswith("export_list_"):
             list_id = int(data.replace("export_list_", ""))
@@ -4740,12 +4744,12 @@ class ShoppingBot:
                 [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
             ]
         else:
-            keyboard = [
-                [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
-                [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
+        keyboard = [
+            [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
+            [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
                 [InlineKeyboardButton("🤝 Custom Shared", callback_data="create_custom_shared_list")],
-                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
-            ]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if user_lang == 'he':
@@ -5026,7 +5030,7 @@ class ShoppingBot:
         else:
             error_text = "❌ Failed to create custom shared list. Please try again."
             await update.callback_query.edit_message_text(error_text)
-
+    
     async def my_lists_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle my lists button/command"""
         if not self.db.is_user_authorized(update.effective_user.id):
@@ -5633,24 +5637,31 @@ class ShoppingBot:
                             category_display = self.get_category_name(user_id, category) or category
                             keyboard.append([InlineKeyboardButton(f"📦 {category_display}", callback_data="noop")])
                         
-                        # Add items for this category
+                        # Add items for this category with inline buttons
                         for item in category_items:
                             # Get current item status from any user (shared status)
                             item_status = self.get_item_shared_status(item['id'])
                             
-                            if item_status['status'] == 'pending':
-                                # Item not marked yet - show mark options
-                                button_text = f"🔍 {item['name']}"
-                                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"mark_item_menu_{item['id']}")])
+                            # Create inline buttons with compact text
+                            item_name_button = f"📦 {item['name'][:15]}"  # Limit item name length
+                            
+                            # Set button text based on current status
+                            if item_status['status'] == 'bought':
+                                bought_button = "✅✓"  # Already bought - compact
+                                not_found_button = "❌"   # Compact not found button
+                            elif item_status['status'] == 'not_found':
+                                bought_button = "✅"    # Compact bought button  
+                                not_found_button = "❌✓"  # Already not found - compact
                             else:
-                                # Item already marked - show status with option to change
-                                status_icon = "✅" if item_status['status'] == 'bought' else "❌"
-                                user_name = item_status['user_name'][:10] if item_status['user_name'] else "Someone"
-                                button_text = f"{status_icon} {item['name']} [{user_name}]"
-                                
-                                # Use color coding through emoji/symbols
-                                callback_data = f"change_status_{item['id']}"
-                                keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+                                bought_button = "✅"    # Compact bought button
+                                not_found_button = "❌"   # Compact not found button
+                            
+                            # Add the row with 3 buttons
+                            keyboard.append([
+                                InlineKeyboardButton(item_name_button, callback_data="noop"),  # Non-interactive item name
+                                InlineKeyboardButton(bought_button, callback_data=f"mark_bought_{item['id']}"),
+                                InlineKeyboardButton(not_found_button, callback_data=f"mark_not_found_{item['id']}")
+                            ])
                         
                         first_category = False
             
@@ -6301,8 +6312,8 @@ class ShoppingBot:
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
     
-    async def show_reset_options(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show granular reset options menu"""
+    async def show_reset_options(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int, context_type: str = "management"):
+        """Show granular reset options menu with context-aware back navigation"""
         user_id = update.effective_user.id
         list_info = self.db.get_list_by_id(list_id)
         
@@ -6338,8 +6349,12 @@ class ShoppingBot:
         # Option 3: Reset Whole List (always available)
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_whole_list'), callback_data=f"reset_whole_list_{list_id}")])
         
-        # Option 4: Back to List
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")])
+        # Option 4: Back to List - Context-aware navigation
+        if context_type == "main":
+            back_callback = f"list_menu_{list_id}"  # Main menu context
+        else:  # management context
+            back_callback = f"list_actions_{list_id}"  # Management context
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=back_callback)])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -6542,7 +6557,7 @@ class ShoppingBot:
             else:
                 keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_finalize_list'), callback_data=f"finalize_list_{list_id}")])
             
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")])
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_main_{list_id}")])
             
             # Add maintenance mode only for supermarket list
             if target_list['list_type'] == 'supermarket':
@@ -6582,7 +6597,7 @@ class ShoppingBot:
             if list_is_frozen:
                 message = f"🔒 **{list_info['name']}** (Frozen)\n\n📋 No items to track yet."
             else:
-                message = f"📋 {list_info['name']}\n\nNo items in this list yet."
+            message = f"📋 {list_info['name']}\n\nNo items in this list yet."
         else:
             # Enhanced summary for frozen lists
             if list_is_frozen:
@@ -6659,29 +6674,29 @@ class ShoppingBot:
                     
             else:
                 # Regular unfrozen list summary
-                categories = {}
-                for item in items:
-                    category = item['category'] or 'Other'
-                    if category not in categories:
-                        categories[category] = []
-                    categories[category].append(item)
-                
-                message = f"📋 {list_info['name']} Summary\n\n"
-                message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
-                
-                for category, category_items in categories.items():
-                    message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
-                    for item in category_items:
-                        message += f"• {item['name']}"
-                        if item['notes']:
-                            message += f" ({item['notes']})"
-                        
-                        # Add delete command for admins
-                        if self.db.is_user_admin(user_id):
-                            message += f"\n  🗑️ /delete_{item['id']}"
-                        
-                        message += "\n"
+            categories = {}
+            for item in items:
+                category = item['category'] or 'Other'
+                if category not in categories:
+                    categories[category] = []
+                categories[category].append(item)
+            
+            message = f"📋 {list_info['name']} Summary\n\n"
+            message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
+            
+            for category, category_items in categories.items():
+                message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
+                for item in category_items:
+                    message += f"• {item['name']}"
+                    if item['notes']:
+                        message += f" ({item['notes']})"
+                    
+                    # Add delete command for admins
+                    if self.db.is_user_admin(user_id):
+                        message += f"\n  🗑️ /delete_{item['id']}"
+                    
                     message += "\n"
+                message += "\n"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
