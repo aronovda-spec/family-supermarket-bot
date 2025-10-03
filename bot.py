@@ -3821,7 +3821,11 @@ class ShoppingBot:
             # Show "no suggestions found" message with back button
             keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            message = "💡 **Manage Items Suggested**\n\n✅ No pending item suggestions found.\n\nAll suggestions have been reviewed."
+            user_lang = self.get_user_language(user_id)
+            if user_lang == 'he':
+                message = f"💡 **{self.get_message(user_id, 'manage_items_suggested_title_hebrew')}**\n\n✅ {self.get_message(user_id, 'no_pending_suggestions_hebrew')}\n\n{self.get_message(user_id, 'all_suggestions_reviewed_hebrew')}"
+            else:
+                message = f"💡 **{self.get_message(user_id, 'manage_items_suggested_title')}**\n\n✅ {self.get_message(user_id, 'no_pending_suggestions')}\n\n{self.get_message(user_id, 'all_suggestions_reviewed')}"
             
             if update.message:
                 await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -7010,8 +7014,8 @@ class ShoppingBot:
                 message = self.get_message(user_id, 'template_management_global_hebrew') + "\n\n" + self.get_message(user_id, 'template_management_message_hebrew')
                 manage_system_templates_text = self.get_message(user_id, 'manage_system_templates_hebrew')
             else:
-                message = "📋 **Template Management**\n\nSelect a list to manage templates:"
-                manage_system_templates_text = "🏛️ Manage System Templates"
+                message = f"📋 **{self.get_message(user_id, 'template_management_title')}**\n\n{self.get_message(user_id, 'select_list_manage_templates')}"
+                manage_system_templates_text = self.get_message(user_id, 'btn_manage_system_templates')
             keyboard = []
             
             # Add system template management for admins
@@ -7172,11 +7176,11 @@ class ShoppingBot:
         item_suggestions_pending = self.db.get_pending_item_suggestions_count()
         
         keyboard = [
-            [InlineKeyboardButton(f"💡 Manage Items Suggested ({item_suggestions_pending})", callback_data="manage_suggestions")],
+            [InlineKeyboardButton(f"{self.get_message(user_id, 'btn_manage_items_suggested_hebrew') if user_lang == 'he' else self.get_message(user_id, 'btn_manage_items_suggested')} ({item_suggestions_pending})", callback_data="manage_suggestions")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_new_item'), callback_data="new_item_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_rename_items'), callback_data="rename_items_admin")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_delete_items'), callback_data="delete_items_admin")],
-            [InlineKeyboardButton("🗑️ Delete Permanent Items", callback_data="delete_permanent_items")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_delete_permanent_items_hebrew') if user_lang == 'he' else self.get_message(user_id, 'btn_delete_permanent_items'), callback_data="delete_permanent_items")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]
         ]
         
@@ -7271,9 +7275,9 @@ class ShoppingBot:
         user_lang = self.get_user_language(user_id)
         
         if user_lang == 'he':
-            message = f"🗑️ **{self.get_message(user_id, 'delete_permanent_items_title_hebrew')}**\n\nבחר קטגוריה למחיקת פריטים קבועים:"
+            message = f"🗑️ **{self.get_message(user_id, 'delete_permanent_items_title_hebrew')}**\n\n{self.get_message(user_id, 'select_category_delete_permanent_hebrew')}"
         else:
-            message = "🗑️ **Delete Permanent Items**\n\nSelect a category to permanently delete items from:"
+            message = f"🗑️ **{self.get_message(user_id, 'delete_permanent_items_title')}**\n\n{self.get_message(user_id, 'select_category_delete_permanent')}"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -9597,18 +9601,18 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'my_template_stats_hebrew'), callback_data=f"template_stats_{list_id}")])
                 keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'manage_my_templates_button_hebrew'), callback_data=f"manage_my_templates_{list_id}")])
             else:
-                keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
-                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'manage_my_template_title_hebrew'), callback_data=f"manage_my_templates_{list_id}")])
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_template_statistics'), callback_data=f"template_stats_{list_id}")])
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'manage_my_template_title'), callback_data=f"manage_my_templates_{list_id}")])
         
         # Admin system template management - moved to main template management menu
         
         if user_lang == 'he':
             keyboard.extend([
-                [InlineKeyboardButton("🔙 חזור לתבניות", callback_data=f"templates_list_{list_id}")]
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_templates_hebrew'), callback_data=f"templates_list_{list_id}")]
             ])
         else:
             keyboard.extend([
-                [InlineKeyboardButton("🔙 Back to Templates", callback_data=f"templates_list_{list_id}")]
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_templates'), callback_data=f"templates_list_{list_id}")]
             ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
