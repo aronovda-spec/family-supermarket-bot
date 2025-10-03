@@ -2614,9 +2614,6 @@ class ShoppingBot:
             list_id = int(data.replace("view_list_", ""))
             await self.view_list_items(update, context, list_id)
         
-        elif data.startswith("remove_specific_items_"):
-            list_id = int(data.replace("remove_specific_items_", ""))
-            await self.show_remove_specific_items(update, context, list_id)
         
         elif data.startswith("reset_bought_items_"):
             list_id = int(data.replace("reset_bought_items_", ""))
@@ -6299,8 +6296,8 @@ class ShoppingBot:
         
         keyboard = []
         
-        # Option 1: Remove Specific Items (always available)
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_remove_specific_items'), callback_data=f"remove_specific_items_{list_id}")])
+        # Option 1: Remove Items (always available)
+        keyboard.append([InlineKeyboardButton("🗑️ Remove Items", callback_data=f"remove_items_{list_id}")])
         
         # Option 2: Reset Bought Items Only (only for frozen lists)
         if list_is_frozen and bought_count > 0:
@@ -6322,41 +6319,6 @@ class ShoppingBot:
         # Add bought items info if frozen
         if list_is_frozen:
             message += f"\n✅ **Bought items: {bought_count}**"
-        
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-    
-    async def show_remove_specific_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show list of items to remove selectively"""
-        user_id = update.effective_user.id
-        list_info = self.db.get_list_by_id(list_id)
-        
-        if not list_info:
-            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
-            return
-        
-        items = self.db.get_shopping_list_by_id(list_id)
-        
-        if not items:
-            await update.callback_query.edit_message_text("📝 " + self.get_message(user_id, 'list_empty'))
-            return
-        
-        keyboard = []
-        current_category = None
-        
-        for item in items:
-            if item['category'] != current_category:
-                current_category = item['category']
-                if keyboard:  # Add separator before new category
-                    keyboard.append([])
-            
-            keyboard.append([
-                InlineKeyboardButton(f"🗑️ {item['name']}", callback_data=f"remove_item_{list_id}_{item['id']}")
-            ])
-        
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_cancel_reset'), callback_data=f"confirm_reset_list_{list_id}")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        message = f"🎯 **Remove Specific Items**\n\n📋 **{list_info['name']}**\n\nSelect items to remove:"
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
@@ -6549,7 +6511,6 @@ class ShoppingBot:
                 keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_finalize_list'), callback_data=f"finalize_list_{list_id}")])
             
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")])
-            keyboard.append([InlineKeyboardButton("🗑️ Remove Items", callback_data=f"remove_items_{list_id}")])
             
             # Add maintenance mode only for supermarket list
             if target_list['list_type'] == 'supermarket':
