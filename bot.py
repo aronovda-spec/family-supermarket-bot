@@ -3561,8 +3561,6 @@ class ShoppingBot:
         user = update.effective_user
         user_name = user.first_name or user.username or self.get_message(update.effective_user.id, 'admin_fallback')
         
-        message = f"🔄 **Bought items reset by {user_name}**\n\n✅ {reset_count} bought items have been reset to 'pending' status.\n\n📋 You can now mark them as bought or not found again!"
-        
         # Get all users except the admin who reset
         all_users = self.db.get_all_users()
         for db_user in all_users:
@@ -3572,7 +3570,7 @@ class ShoppingBot:
                     localized_message = self.get_message(db_user['user_id'], 'bought_items_reset_notification').format(
                         reset_by=user_name,
                         count=reset_count
-                    ) if self.get_message(db_user['user_id'], 'bought_items_reset_notification') else message
+                    )
                     
                     await context.bot.send_message(
                         chat_id=db_user['user_id'],
@@ -4277,11 +4275,19 @@ class ShoppingBot:
                 if user_lang == 'he':
                     prompt_text += f"\n\n⚠️ {self.get_message(user_id, 'voice_recognition_limited_hebrew')}"
                     if availability_status['reason']:
-                        prompt_text += f"\n📝 {self.get_message(user_id, 'voice_note_hebrew')}: {availability_status['reason']}"
+                        if availability_status['reason'].startswith('speech_recognition_library_not_installed'):
+                            reason_text = self.get_message(user_id, 'speech_recognition_library_not_installed_hebrew')
+                        else:
+                            reason_text = availability_status['reason']
+                        prompt_text += f"\n📝 {self.get_message(user_id, 'voice_note_hebrew')}: {reason_text}"
                 else:
                     prompt_text += f"\n\n⚠️ {self.get_message(user_id, 'voice_recognition_limited')}"
                     if availability_status['reason']:
-                        prompt_text += f"\n📝 {self.get_message(user_id, 'voice_note')}: {availability_status['reason']}"
+                        if availability_status['reason'].startswith('speech_recognition_library_not_installed'):
+                            reason_text = self.get_message(user_id, 'speech_recognition_library_not_installed')
+                        else:
+                            reason_text = availability_status['reason']
+                        prompt_text += f"\n📝 {self.get_message(user_id, 'voice_note')}: {reason_text}"
                 
                 if user_lang == 'he':
                     prompt_text += "\n💡 " + self.get_message(user_id, 'voice_messages_manual_typing_hebrew')
@@ -4305,7 +4311,7 @@ class ShoppingBot:
         }
         
         if not SPEECH_RECOGNITION_AVAILABLE:
-            status['reason'] = "Speech recognition library not installed"
+            status['reason'] = "speech_recognition_library_not_installed"
             return status
         
         # Check available recognition methods
@@ -5498,7 +5504,7 @@ class ShoppingBot:
                 list_name=list_info['name']
             )
             
-            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="manage_lists_admin")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup, parse_mode='Markdown')
