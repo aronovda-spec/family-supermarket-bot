@@ -2420,7 +2420,11 @@ class ShoppingBot:
         
         elif data.startswith("list_menu_"):
             list_id = int(data.replace("list_menu_", ""))
-            await self.show_list_menu(update, context, list_id)
+            list_info = self.db.get_list_by_id(list_id)
+            if list_info:
+                await self.show_list_menu(update, context, list_info['name'])
+            else:
+                await update.callback_query.edit_message_text("❌ List not found.")
         
         elif data.startswith("view_list_"):
             list_id = int(data.replace("view_list_", ""))
