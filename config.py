@@ -1249,6 +1249,31 @@ For support, contact your family admin.""",
         'manage_my_template_notification_hebrew': "נהל את התבניות שלי",
         'back_to_template_management_hebrew': "חזור לניהול תבניות",
         'delete_button_hebrew': "מחק",
-        'back_to_list_button_hebrew': "חזור לרשימה"
+        'back_to_list_button_hebrew': "חזור לרשימה",
+        
+        # Remaining Hebrew translations for maintenance and template management
+        'view_schedule_title_hebrew': "צפה בלוח זמנים",
+        'current_maintenance_schedule_title_hebrew': "לוח זמנים נוכחי של תחזוקה",
+        'disable_maintenance_title_hebrew': "השבת תחזוקה",
+        'set_schedule_title_hebrew': "הגדר לוח זמנים",
+        'delete_permanent_items_title_hebrew': "מחק פריטים קבועים",
+        'manage_items_suggested_title_hebrew': "נהל פריטים מוצעים",
+        'choose_what_to_manage_title_hebrew': "בחר מה לנהל",
+        'back_to_management_title_hebrew': "חזור לניהול",
+        'list_title_hebrew': "רשימה",
+        'template_list_management_title_hebrew': "ניהול רשימת תבניות",
+        'manage_my_template_title_hebrew': "נהל את התבניות שלי",
+        'back_to_template_management_title_hebrew': "חזור לניהול תבניות",
+        'template_notifications_hebrew': "התראות תבניות",
+        'template_management_buttons_hebrew': "כפתורי ניהול תבניות",
+        'delete_template_button_hebrew': "מחק תבנית",
+        'edit_template_button_hebrew': "ערוך תבנית",
+        'view_template_button_hebrew': "צפה בתבנית",
+        'create_template_button_hebrew': "צור תבנית",
+        'maintenance_schedule_notification_hebrew': "התראת לוח זמנים של תחזוקה",
+        'maintenance_disabled_notification_hebrew': "תחזוקה הושבתה",
+        'schedule_set_notification_hebrew': "לוח זמנים הוגדר",
+        'permanent_items_deleted_notification_hebrew': "פריטים קבועים נמחקו",
+        'items_suggested_managed_notification_hebrew': "פריטים מוצעים נוהלו"
     }
 }
