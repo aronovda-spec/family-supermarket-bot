@@ -456,6 +456,7 @@ class ShoppingBot:
             'Chicken': 'עוף',
             'Rice': 'אורז',
             'Pasta': 'פסטה',
+            'Apple': 'תפוח',
             'Apples': 'תפוחים',
             'Bananas': 'בננות',
             'Potatoes': 'תפוחי אדמה',
@@ -4259,18 +4260,28 @@ class ShoppingBot:
             
             # Add availability information
             if availability_status['available']:
-                prompt_text += f"\n\n✅ Voice recognition: Available"
-                if availability_status['methods']:
-                    prompt_text += f"\n🔧 Methods: {', '.join(availability_status['methods'])}"
+                if user_lang == 'he':
+                    prompt_text += f"\n\n✅ {self.get_message(user_id, 'voice_recognition_available_hebrew')}"
+                    if availability_status['methods']:
+                        prompt_text += f"\n🔧 {self.get_message(user_id, 'voice_methods_hebrew')}: {', '.join(availability_status['methods'])}"
+                else:
+                    prompt_text += f"\n\n✅ {self.get_message(user_id, 'voice_recognition_available')}"
+                    if availability_status['methods']:
+                        prompt_text += f"\n🔧 {self.get_message(user_id, 'voice_methods')}: {', '.join(availability_status['methods'])}"
             else:
-                prompt_text += f"\n\n⚠️ Voice recognition: Limited"
-                if availability_status['reason']:
-                    prompt_text += f"\n📝 Note: {availability_status['reason']}"
-                user_lang = self.get_user_language(user_id)
+                if user_lang == 'he':
+                    prompt_text += f"\n\n⚠️ {self.get_message(user_id, 'voice_recognition_limited_hebrew')}"
+                    if availability_status['reason']:
+                        prompt_text += f"\n📝 {self.get_message(user_id, 'voice_note_hebrew')}: {availability_status['reason']}"
+                else:
+                    prompt_text += f"\n\n⚠️ {self.get_message(user_id, 'voice_recognition_limited')}"
+                    if availability_status['reason']:
+                        prompt_text += f"\n📝 {self.get_message(user_id, 'voice_note')}: {availability_status['reason']}"
+                
                 if user_lang == 'he':
                     prompt_text += "\n💡 " + self.get_message(user_id, 'voice_messages_manual_typing_hebrew')
                 else:
-                    prompt_text += "\n💡 You can still use voice messages, but manual typing may be required."
+                    prompt_text += "\n💡 " + self.get_message(user_id, 'voice_messages_manual_typing')
             
             await update.callback_query.edit_message_text(
                 prompt_text,
@@ -5817,14 +5828,14 @@ class ShoppingBot:
                             
                             # Set button text based on current status
                             if item_status['status'] == 'bought':
-                                bought_button = f"✅✓{bought_text}"  # Already bought - compact
-                                not_found_button = f"❌{not_found_text}"   # Compact not found button
+                                bought_button = f"✓{bought_text}"  # Already bought - add checkmark
+                                not_found_button = not_found_text   # Regular not found button
                             elif item_status['status'] == 'not_found':
-                                bought_button = f"✅{bought_text}"    # Compact bought button  
-                                not_found_button = f"❌✓{not_found_text}"  # Already not found - compact
+                                bought_button = bought_text    # Regular bought button  
+                                not_found_button = f"✓{not_found_text}"  # Already not found - add checkmark
                             else:
-                                bought_button = f"✅{bought_text}"    # Compact bought button
-                                not_found_button = f"❌{not_found_text}"   # Compact not found button
+                                bought_button = bought_text    # Regular bought button
+                                not_found_button = not_found_text   # Regular not found button
                             
                             # Add the row with 3 buttons
                             keyboard.append([
@@ -5862,7 +5873,8 @@ class ShoppingBot:
                     category_name = self.get_category_name(user_id, current_category) if current_category else 'Custom'
                     message += f"\n{category_name}:\n"
                 
-                message += f"• {item['name']}"
+                translated_name = self.translate_item_name(item['name'], user_id)
+                message += f"• {translated_name}"
                 if item['notes']:
                     message += f" ({item['notes']})"
                 if item['item_notes']:
@@ -6042,8 +6054,9 @@ class ShoppingBot:
         # Add buttons for each category
         for category, category_items in grouped_items.items():
             category_name = self.get_category_name(user_id, category)
+            items_count_text = self.get_message(user_id, 'items_count_inline').format(count=len(category_items))
             keyboard.append([InlineKeyboardButton(
-                f"📂 {category_name} ({len(category_items)} items)", 
+                f"📂 {category_name} ({items_count_text})", 
                 callback_data=f"remove_category_{list_id}_{category}"
             )])
         
@@ -6065,11 +6078,11 @@ class ShoppingBot:
                 )])
         
         keyboard.append([InlineKeyboardButton(
-            "🔍 Remove Individual Items", 
+            self.get_message(user_id, 'btn_remove_individual_items'), 
             callback_data=f"remove_individual_{list_id}"
         )])
         keyboard.append([InlineKeyboardButton(
-            "☑️ Select Multiple Items", 
+            self.get_message(user_id, 'btn_select_multiple_items'), 
             callback_data=f"select_multiple_{list_id}"
         )])
         
@@ -6130,13 +6143,21 @@ class ShoppingBot:
         items = self.db.get_shopping_list_by_id(list_id)
         
         if not items:
-            message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove."
+            user_lang = self.get_user_language(user_id)
+            if user_lang == 'he':
+                message = f"📋 **{list_info['name']}**\n\n📝 רשימה זו ריקה. אין מה להסיר."
+            else:
+                message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove."
             keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
             return
         
-        message = f"🔍 **Remove Individual Items from {list_info['name']}**\n\n"
+        user_lang = self.get_user_language(user_id)
+        if user_lang == 'he':
+            message = f"🔍 **הסר פריטים בודדים מ{list_info['name']}**\n\n"
+        else:
+            message = f"🔍 **Remove Individual Items from {list_info['name']}**\n\n"
         message += self.get_message(user_id, 'select_items_remove')
         
         keyboard = []
@@ -6147,7 +6168,8 @@ class ShoppingBot:
             for j in range(2):
                 if i + j < len(items):
                     item = items[i + j]
-                    item_name = item['name'][:20] + "..." if len(item['name']) > 20 else item['name']
+                    translated_name = self.translate_item_name(item['name'], user_id)
+                    item_name = translated_name[:20] + "..." if len(translated_name) > 20 else translated_name
                     row.append(InlineKeyboardButton(
                         f"🗑️ {item_name}", 
                         callback_data=f"remove_item_{list_id}_{item['id']}"
@@ -6155,7 +6177,7 @@ class ShoppingBot:
             keyboard.append(row)
         
         # Add back button
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'back_to_remove_menu_hebrew'), callback_data=f"remove_items_{list_id}")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_remove_menu'), callback_data=f"remove_items_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -6341,7 +6363,11 @@ class ShoppingBot:
         items = self.db.get_shopping_list_by_id(list_id)
         
         if not items:
-            message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove."
+            user_lang = self.get_user_language(user_id)
+            if user_lang == 'he':
+                message = f"📋 **{list_info['name']}**\n\n📝 רשימה זו ריקה. אין מה להסיר."
+            else:
+                message = f"📋 **{list_info['name']}**\n\n📝 This list is empty. Nothing to remove."
             keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
@@ -6366,7 +6392,8 @@ class ShoppingBot:
             item_id = item['id']
             is_selected = item_id in context.user_data['selected_items']
             checkbox = "✅" if is_selected else "☐"
-            item_name = item['name'][:25] + "..." if len(item['name']) > 25 else item['name']
+            translated_name = self.translate_item_name(item['name'], user_id)
+            item_name = translated_name[:25] + "..." if len(translated_name) > 25 else translated_name
             
             keyboard.append([InlineKeyboardButton(
                 f"{checkbox} {item_name}", 
@@ -6385,7 +6412,7 @@ class ShoppingBot:
             )])
         
         # Add back button
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'back_to_remove_menu_hebrew'), callback_data=f"remove_items_{list_id}")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_remove_menu'), callback_data=f"remove_items_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
