@@ -1767,6 +1767,9 @@ class ShoppingBot:
                 await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'list_empty'))
             return
 
+        # Get user ID first
+        user_id = update.effective_user.id
+        
         # Group items by category
         categorized_items = {}
         for item in items:
@@ -1782,8 +1785,6 @@ class ShoppingBot:
             f"📋 Total Items: {len(items)}",
             "─" * 30
         ]
-        
-        user_id = update.effective_user.id
         for category, category_items in categorized_items.items():
             # Get category emoji and localized name
             category_emoji = "📦"
@@ -5807,18 +5808,23 @@ class ShoppingBot:
                             item_status = self.get_item_shared_status(item['id'])
                             
                             # Create inline buttons with compact text
-                            item_name_button = f"📦 {item['name'][:15]}"  # Limit item name length
+                            translated_item_name = self.translate_item_name(item['name'], user_id)
+                            item_name_button = f"📦 {translated_item_name[:15]}"  # Limit item name length
+                            
+                            # Get localized button texts
+                            bought_text = self.get_message(user_id, 'btn_bought')
+                            not_found_text = self.get_message(user_id, 'btn_not_found_button')
                             
                             # Set button text based on current status
                             if item_status['status'] == 'bought':
-                                bought_button = "✅✓"  # Already bought - compact
-                                not_found_button = "❌"   # Compact not found button
+                                bought_button = f"✅✓{bought_text}"  # Already bought - compact
+                                not_found_button = f"❌{not_found_text}"   # Compact not found button
                             elif item_status['status'] == 'not_found':
-                                bought_button = "✅"    # Compact bought button  
-                                not_found_button = "❌✓"  # Already not found - compact
+                                bought_button = f"✅{bought_text}"    # Compact bought button  
+                                not_found_button = f"❌✓{not_found_text}"  # Already not found - compact
                             else:
-                                bought_button = "✅"    # Compact bought button
-                                not_found_button = "❌"   # Compact not found button
+                                bought_button = f"✅{bought_text}"    # Compact bought button
+                                not_found_button = f"❌{not_found_text}"   # Compact not found button
                             
                             # Add the row with 3 buttons
                             keyboard.append([
@@ -6848,7 +6854,8 @@ class ShoppingBot:
                         else:
                             status_symbol = "○"
                         
-                        message += f"{status_symbol} {item['name']}"
+                        translated_name = self.translate_item_name(item['name'], user_id)
+                        message += f"{status_symbol} {translated_name}"
                         if item['notes']:
                             message += f" ({item['notes']})"
                         message += "\n"
@@ -6868,9 +6875,11 @@ class ShoppingBot:
                 message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
                 
                 for category, category_items in categories.items():
-                    message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
+                    category_name = self.get_category_name(user_id, category) or category
+                    message += f"{category_name} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
                     for item in category_items:
-                        message += f"• {item['name']}"
+                        translated_name = self.translate_item_name(item['name'], user_id)
+                        message += f"• {translated_name}"
                         if item['notes']:
                             message += f" ({item['notes']})"
                         
