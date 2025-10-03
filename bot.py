@@ -5210,6 +5210,8 @@ class ShoppingBot:
         user_id = update.effective_user.id
         list_info = self.db.get_list_by_id(list_id)
         
+        await update.callback_query.answer()
+        
         if not list_info:
             await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
             return
@@ -5463,20 +5465,38 @@ class ShoppingBot:
                     
                     message += "\n"
                 
-                # Add Buy/Bought and Not Found options for frozen lists
+                # Add Buy/Bought and Not Found options for frozen lists with better organization
                 if items:
-                    # Organize items by category for better UI
-                    current_category = None
-                    for i, item in enumerate(items):
-                        if item['category'] != current_category:
-                            current_category = item['category']
-                            if i > 0:  # Add separator except for first category
-                                keyboard.append([])
+                    # Group items by category first for better organization
+                    categories_items = {}
+                    for item in items:
+                        category = item['category'] or 'Custom'
+                        if category not in categories_items:
+                            categories_items[category] = []
+                        categories_items[category].append(item)
+                    
+                    # Create keyboard with category groupings
+                    category_keys = sorted(categories_items.keys())  # Sort categories alphabetically
+                    first_category = True
+                    
+                    for category in category_keys:
+                        category_items = categories_items[category]
+                        if not first_category:
+                            keyboard.append([])  # Add empty row as separator
                         
-                        keyboard.append([
-                            InlineKeyboardButton(f"✅ {item['name']}", callback_data=f"mark_bought_{item['id']}"),
-                            InlineKeyboardButton(f"❌ {item['name']}", callback_data=f"mark_not_found_{item['id']}")
-                        ])
+                        # Add category header (if multiple categories)
+                        if len(category_keys) > 1:
+                            category_display = self.get_category_name(user_id, category) or category
+                            keyboard.append([InlineKeyboardButton(f"📦 {category_display}", callback_data="noop")])
+                        
+                        # Add items for this category
+                        for item in category_items:
+                            keyboard.append([
+                                InlineKeyboardButton(f"✅ {item['name']}", callback_data=f"mark_bought_{item['id']}"),
+                                InlineKeyboardButton(f"❌ {item['name']}", callback_data=f"mark_not_found_{item['id']}")
+                            ])
+                        
+                        first_category = False
             
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")])
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -6436,34 +6456,112 @@ class ShoppingBot:
             return
         
         items = self.db.get_shopping_list_by_id(list_id)
+        list_is_frozen = self.db.is_list_frozen(list_id)
         
         if not items:
-            message = f"📋 {list_info['name']}\n\nNo items in this list yet."
+            if list_is_frozen:
+                message = f"🔒 **{list_info['name']}** (Frozen)\n\n📋 No items to track yet."
+            else:
+                message = f"📋 {list_info['name']}\n\nNo items in this list yet."
         else:
-            # Group items by category
-            categories = {}
-            for item in items:
-                category = item['category'] or 'Other'
-                if category not in categories:
-                    categories[category] = []
-                categories[category].append(item)
-            
-            message = f"📋 {list_info['name']} Summary\n\n"
-            message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
-            
-            for category, category_items in categories.items():
-                message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
-                for item in category_items:
-                    message += f"• {item['name']}"
-                    if item['notes']:
-                        message += f" ({item['notes']})"
+            # Enhanced summary for frozen lists
+            if list_is_frozen:
+                frozen_info = self.db.get_frozen_info(list_id)
+                message = self.get_message(user_id, 'frozen_list_summary_title') + "\n\n"
+                message += f"📋 **{list_info['name']}**\n"
+                finalized_time = frozen_info['frozen_at'][:16] if frozen_info['frozen_at'] else 'Unknown'
+                message += self.get_message(user_id, 'finalized_on').format(timestamp=finalized_time) + "\n\n"
+                
+                # Calculate shopping progress
+                total_items = len(items)
+                bought_items = 0
+                not_found_items = 0
+                
+                # Group items by category with status
+                categories = {}
+                for item in items:
+                    category = item['category'] or 'Custom'
+                    if category not in categories:
+                        categories[category] = []
                     
-                    # Add delete command for admins
-                    if self.db.is_user_admin(user_id):
-                        message += f"\n  🗑️ /delete_{item['id']}"
+                    # Get item status for this user
+                    status = self.db.get_item_status(item['id'], user_id)
+                    item_with_status = item.copy()
+                    item_with_status['status'] = status
+                    categories[category].append(item_with_status)
+                    
+                    if status == 'bought':
+                        bought_items += 1
+                    elif status == 'not_found':
+                        not_found_items += 1
+                
+                progress_percent = int((bought_items / total_items) * 100) if total_items > 0 else 0
+                message += self.get_message(user_id, 'your_progress').format(
+                    bought=bought_items, 
+                    total=total_items, 
+                    percent=progress_percent
+                ) + "\n"
+                message += self.get_message(user_id, 'status_summary').format(
+                    bought=bought_items, 
+                    not_found=not_found_items
+                ) + "\n\n"
+                
+                # Show categorized progress
+                for category, category_items in categories.items():
+                    category_bought = sum(1 for item in category_items if item['status'] == 'bought')
+                    category_total = len(category_items)
+                    
+                    if category_bought == category_total and category_total > 0:
+                        status_indicator = self.get_message(user_id, 'category_complete')
+                    else:
+                        status_indicator = self.get_message(user_id, 'category_progress').format(
+                            bought=category_bought, 
+                            total=category_total
+                        )
+                    
+                    message += f"📦 **{self.get_category_name(user_id, category) or category}** ({status_indicator}):\n"
+                    
+                    for item in category_items:
+                        status_symbol = ""
+                        if item['status'] == 'bought':
+                            status_symbol = "✅"
+                        elif item['status'] == 'not_found':
+                            status_symbol = "❌"
+                        else:
+                            status_symbol = "○"
+                        
+                        message += f"{status_symbol} {item['name']}"
+                        if item['notes']:
+                            message += f" ({item['notes']})"
+                        message += "\n"
                     
                     message += "\n"
-                message += "\n"
+                    
+            else:
+                # Regular unfrozen list summary
+                categories = {}
+                for item in items:
+                    category = item['category'] or 'Other'
+                    if category not in categories:
+                        categories[category] = []
+                    categories[category].append(item)
+                
+                message = f"📋 {list_info['name']} Summary\n\n"
+                message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
+                
+                for category, category_items in categories.items():
+                    message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
+                    for item in category_items:
+                        message += f"• {item['name']}"
+                        if item['notes']:
+                            message += f" ({item['notes']})"
+                        
+                        # Add delete command for admins
+                        if self.db.is_user_admin(user_id):
+                            message += f"\n  🗑️ /delete_{item['id']}"
+                        
+                        message += "\n"
+                    message += "\n"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
