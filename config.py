@@ -12,7 +12,7 @@ if DEVELOPER_MODE:
     BOT_TOKEN = os.getenv('DEV_BOT_TOKEN')
     if not BOT_TOKEN:
         raise ValueError("DEV_BOT_TOKEN environment variable is required for developer mode")
-    print("🛠️ Running in DEVELOPER MODE")
+    print("Running in DEVELOPER MODE")
 else:
     # Use production bot token
     BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -34,10 +34,10 @@ if admin_ids_str and admin_ids_str != 'your_admin_user_id_here':
 # Database Configuration - Separate database for developer mode
 if DEVELOPER_MODE:
     DATABASE_PATH = os.getenv('DEV_DATABASE_PATH', 'shopping_bot_dev.db')
-    print(f"📁 Using developer database: {DATABASE_PATH}")
+    print(f"Using developer database: {DATABASE_PATH}")
 else:
     DATABASE_PATH = os.getenv('DATABASE_PATH', 'shopping_bot.db')
-    print(f"📁 Using production database: {DATABASE_PATH}")
+    print(f"Using production database: {DATABASE_PATH}")
 
 # Categories Configuration - Multi-language
 CATEGORIES = {
@@ -422,6 +422,17 @@ For support, contact your family admin.""",
         'btn_select_all': "🚫 Select All",
         'custom_shared_list_created': "✅ **Custom Shared List Created!**\n\n📋 **{list_name}** has been created and shared with {user_count} users.",
         'new_custom_shared_list_notification': "🤝 **New Custom Shared List**\n\n📋 **{list_name}** has been shared with you by {creator_name}!",
+        'finalize_list_title': "🔒 FINALIZE LIST",
+        'finalize_list_confirm': "🔒 **Finalize List**\n\nList: {list_name}\nItems: {item_count}\n\n⚠️ **This action will freeze the list!**\n\nOnce finalized:\n• ✅ Items can be marked as 'Bought' or 'Not Found'\n• ❌ No items can be added or removed\n• 📋 List becomes a shopping checklist\n\n**This action requires admin privileges.**\n\nAre you sure you want to finalize this list?",
+        'list_finalized': "✅ **List Finalized Successfully!**\n\n🔒 **{list_name}** has been frozen.\n\n📋 The list is now in checklist mode:\n• ✅ Mark items as 'Bought' or 'Not Found'\n• ❌ Cannot add or remove items\n• 📤 All users can view and check off items",
+        'list_unfrozen': "🔓 **List Unfrozen Successfully!**\n\n📋 **{list_name}** has been restored to normal mode.\n\n✅ Users can now add and remove items again.",
+        'list_is_frozen': "🔒 **FROZEN LIST**\n\nThis list has been finalized and is now in frozen mode.\n\n✅ **Available actions:**\n• Mark items as 'Bought' or 'Not Found'\n• View the shopping checklist\n\n❌ **Not available:**\n• Adding new items\n• Removing items\n\n📋 Use this as your shopping checklist!",
+        'btn_mark_bought': "✅ Bought",
+        'btn_mark_not_found': "❌ Not Found",
+        'item_marked_bought': "✅ '{item_name}' marked as purchased!",
+        'item_marked_not_found': "❌ '{item_name}' marked as not found!",
+        'frozen_mode_action_denied': "🔒 **Frozen List**\n\n❌ This list has been finalized.\n\n✅ **You can only:**\n• Mark items as 'Bought' or 'Not Found'\n• View the shopping checklist\n\n❌ **You cannot:**\n• Add new items\n• Remove items",
+        'finalize_permission_denied': "❌ **Permission Denied**\n\nOnly the following can finalize this list:\n• Admin users (for shared lists)\n• List owner/creator (for personal/custom shared lists)",
         'btn_manage_lists': "📂 Manage Lists",
         'btn_manage_my_lists': "📂 Manage My Lists",
         'admin_controls_title': "⚙️ ADMIN CONTROLS\n\nChoose an admin action:",
@@ -534,6 +545,12 @@ For support, contact your family admin.""",
         'btn_edit_name': "✏️ Edit Name",
         'btn_remove_items': "🗑️ Remove Items",
         'btn_reset_items': "🔄 Reset Items/List",
+        'reset_options_title': "🔄 RESET OPTIONS",
+        'reset_options_message': "🔧 **Reset Options for {list_name}**\n\nItems: {item_count}\n\nChoose what to reset:",
+        'btn_remove_specific_items': "🎯 Remove Specific Items",
+        'btn_reset_bought_items': "✅ Reset 'Bought' Items Only", 
+        'btn_reset_whole_list': "🔄 Reset Whole List",
+        'btn_cancel_reset': "❌ Cancel",
         'btn_maintenance_mode': "⏰ Maintenance Mode",
         'btn_delete_list': "🗑️ Delete List",
         'btn_back_to_main_menu': "🏠 Back to Main Menu",
@@ -543,6 +560,8 @@ For support, contact your family admin.""",
         'btn_edit_description': "📝 Edit Description",
         'btn_view_statistics': "📊 View Statistics",
         'btn_export_list': "📤 Export List",
+        'btn_finalize_list': "🔒 Finalize List",
+        'btn_unfreeze_list': "🔓 Unfreeze List",
         'supermarket_protected': "🛡️ PROTECTED LIST\n\n❌ The {supermarket_list} cannot be deleted.\n\nThis is the core list of the bot and must always remain active.",
         'supermarket_core_purpose': "This is the core list of the bot and must always remain active.",
         'btn_new_category': "➕ New Category",
@@ -826,6 +845,17 @@ For support, contact your family admin.""",
         'btn_select_all': "🚫 בחר הכל",
         'custom_shared_list_created': "✅ **רשימה משותפת מותאמת נוצרה!**\n\n📋 **{list_name}** נוצרה ושותפה עם {user_count} משתמשים.",
         'new_custom_shared_list_notification': "🤝 **רשימה משותפת מותאמת חדשה**\n\n📋 **{list_name}** שותפה איתך על ידי {creator_name}!",
+        'finalize_list_title': "🔒 סגירת רשימה",
+        'finalize_list_confirm': "🔒 **סגירת רשימה**\n\nרשימה: {list_name}\nפריטים: {item_count}\n\n⚠️ **פעולה זו תקפיא את הרשימה!**\n\nלאחר הסגירה:\n• ✅ ניתן לסמן פריטים כ'נקנו' או 'לא נמצאו'\n• ❌ לא ניתן להוסיף או להסיר פריטים\n• 📋 הרשימה הופכת לרשימת מכולת\n\n**פעולה זו דורשת הרשאות מנהל.**\n\nהאם אתה בטוח שברצונך לסגור את הרשימה?",
+        'list_finalized': "✅ **רשימה נסגרה בהצלחה!**\n\n🔒 **{list_name}** הוקפאה.\n\n📋 הרשימה עכשיו במצב רשימת מכולת:\n• ✅ סמן פריטים כ'נקנו' או 'לא נמצאו'\n• ❌ לא ניתן להוסיף או להסיר פריטים\n• 📤 כל המשתמשים יכולים לצפות ולסמן פריטים",
+        'list_unfrozen': "🔓 **רשימה נפתחה בהצלחה!**\n\n📋 **{list_name}** הוחזרה למצב רגיל.\n\n✅ משתמשים יכולים כעת להוסיף ולהסיר פריטים שוב.",
+        'list_is_frozen': "🔒 **רשימה קפואה**\n\nרשימה זו נסגרה והיא כעת במצב קפוא.\n\n✅ **פעולות זמינות:**\n• סמן פריטים כ'נקנו' או 'לא נמצאו'\n• צפה ברשימת המכולת\n\n❌ **לא זמין:**\n• הוספת פריטים חדשים\n• הסרת פריטים\n\n📋 השתמש בזה כרשימת המכולת שלך!",
+        'btn_mark_bought': "✅ נקנה",
+        'btn_mark_not_found': "❌ לא נמצא",
+        'item_marked_bought': "✅ '{item_name}' סומן כנקנה!",
+        'item_marked_not_found': "❌ '{item_name}' סומן כלא נמצא!",
+        'frozen_mode_action_denied': "🔒 **רשימה קפואה**\n\n❌ רשימה זו נסגרה.\n\n✅ **אתה יכול רק:**\n• לסמן פריטים כ'נקנו' או 'לא נמצאו'\n• לצפות ברשימת המכולת\n\n❌ **אתה לא יכול:**\n• להוסיף פריטים חדשים\n• להסיר פריטים",
+        'finalize_permission_denied': "❌ **הרשאה נדחתה**\n\nרק הדברים הבאים יכולים לסגור רשימה זו:\n• מנהלי מערכת (עבור רשימות משותפות)\n• בעל/יוצר הרשימה (עבור הרשימות האישיות/המשותפות המותאמות)",
         'btn_manage_lists': "📂 נהל רשימות",
         'btn_manage_my_lists': "📂 נהל את הרשימות שלי",
         'admin_controls_title': "⚙️ בקרות מנהל\n\nבחר פעולת מנהל:",
@@ -932,6 +962,12 @@ For support, contact your family admin.""",
         'btn_edit_name': "✏️ ערוך שם",
         'btn_remove_items': "🗑️ הסר פריטים",
         'btn_reset_items': "🔄 אפס פריטים/רשימה",
+        'reset_options_title': "🔄 אפשרויות איפוס",
+        'reset_options_message': "🔧 **אפשרויות איפוס עבור {list_name}**\n\nפריטים: {item_count}\n\nבחר מה לאיפוס:",
+        'btn_remove_specific_items': "🎯 הסר פריטים ספציפיים",
+        'btn_reset_bought_items': "✅ אפס רק פריטים 'נקנו'", 
+        'btn_reset_whole_list': "🔄 אפס את כל הרשימה",
+        'btn_cancel_reset': "❌ ביטול",
         'btn_maintenance_mode': "⏰ מצב תחזוקה",
         'btn_delete_list': "🗑️ מחק רשימה",
         'btn_back_to_main_menu': "🏠 חזרה לתפריט הראשי",
@@ -941,6 +977,8 @@ For support, contact your family admin.""",
         'btn_edit_description': "📝 ערוך תיאור",
         'btn_view_statistics': "📊 צפה בסטטיסטיקות",
         'btn_export_list': "📤 ייצא רשימה",
+        'btn_finalize_list': "🔒 סגור רשימה",
+        'btn_unfreeze_list': "🔓 פתח רשימה",
         'supermarket_protected': "🛡️ רשימה מוגנת\n\n❌ {supermarket_list} לא ניתן למחיקה.\n\nזוהי הרשימה המרכזית של הבוט וחייבת להישאר פעילה תמיד.",
         'supermarket_core_purpose': "זוהי הרשימה המרכזית של הבוט וחייבת להישאר פעילה תמיד.",
         'btn_new_category': "➕ קטגוריה חדשה",

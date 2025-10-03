@@ -2556,11 +2556,43 @@ class ShoppingBot:
         
         elif data.startswith("confirm_reset_list_"):
             list_id = int(data.replace("confirm_reset_list_", ""))
-            await self.confirm_reset_list_items(update, context, list_id)
+            await self.show_reset_options(update, context, list_id)
         
         elif data.startswith("export_list_"):
             list_id = int(data.replace("export_list_", ""))
             await self.export_list(update, context, list_id)
+        
+        elif data.startswith("finalize_list_"):
+            list_id = int(data.replace("finalize_list_", ""))
+            await self.show_finalize_confirmation(update, context, list_id)
+        
+        elif data.startswith("confirm_finalize_"):
+            list_id = int(data.replace("confirm_finalize_", ""))
+            await self.finalize_list(update, context, list_id)
+        
+        elif data.startswith("unfreeze_list_"):
+            list_id = int(data.replace("unfreeze_list_", ""))
+            await self.unfreeze_list(update, context, list_id)
+        
+        elif data.startswith("mark_bought_"):
+            item_id = int(data.replace("mark_bought_", ""))
+            await self.mark_item_bought(update, context, item_id)
+        
+        elif data.startswith("mark_not_found_"):
+            item_id = int(data.replace("mark_not_found_", ""))
+            await self.mark_item_not_found(update, context, item_id)
+        
+        elif data.startswith("remove_specific_items_"):
+            list_id = int(data.replace("remove_specific_items_", ""))
+            await self.show_remove_specific_items(update, context, list_id)
+        
+        elif data.startswith("reset_bought_items_"):
+            list_id = int(data.replace("reset_bought_items_", ""))
+            await self.reset_bought_items(update, context, list_id)
+        
+        elif data.startswith("reset_whole_list_"):
+            list_id = int(data.replace("reset_whole_list_", ""))
+            await self.confirm_reset_whole_list(update, context, list_id)
         
         elif data.startswith("summary_list_"):
             list_id = int(data.replace("summary_list_", ""))
@@ -2653,6 +2685,9 @@ class ShoppingBot:
         elif data.startswith("reset_list_"):
             list_id = int(data.replace("reset_list_", ""))
             if self.db.reset_list(list_id):
+                # Clear all item statuses for this list when doing a full reset
+                self.db.clear_item_statuses_for_list(list_id)
+                
                 list_info = self.db.get_list_by_id(list_id)
                 list_name = list_info['name'] if list_info else self.get_message(update.effective_user.id, 'list_fallback').format(list_id=list_id)
                 message = self.get_message(update.effective_user.id, 'list_reset_items').format(list_name=list_name)
@@ -4988,7 +5023,7 @@ class ShoppingBot:
         
         if not all_lists:
             message = self.get_message(user_id, 'manage_lists_empty')
-            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="admin_management")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")]]
         else:
             message = self.get_message(user_id, 'manage_lists_title')
             keyboard = []
@@ -5021,7 +5056,7 @@ class ShoppingBot:
                     callback_data=f"list_actions_{list_info['id']}"
                 )])
             
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="admin_management")])
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_management'), callback_data="admin_management")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -5090,14 +5125,24 @@ class ShoppingBot:
         items = self.db.get_shopping_list_by_id(list_id)
         item_count = len(items)
         
+        # Check if list is frozen
+        list_is_frozen = self.db.is_list_frozen(list_id)
+        
         # Admin-only actions (no basic user actions in admin menu)
         keyboard = [
             [InlineKeyboardButton(self.get_message(user_id, 'btn_edit_name'), callback_data=f"edit_list_name_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_edit_description'), callback_data=f"edit_list_description_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_view_statistics'), callback_data=f"list_statistics_{list_id}")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_export_list'), callback_data=f"export_list_{list_id}")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_export_list'), callback_data=f"export_list_{list_id}")]
         ]
+        
+        # Add Finalize/Unfreeze button based on current state
+        if list_is_frozen:
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_unfreeze_list'), callback_data=f"unfreeze_list_{list_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_finalize_list'), callback_data=f"finalize_list_{list_id}")])
+        
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")])
         
         # Only allow deletion for custom lists (not supermarket list)
         if list_info['list_type'] != 'supermarket':
@@ -5109,6 +5154,194 @@ class ShoppingBot:
         message = self.get_message(user_id, 'list_actions').format(list_name=list_info['name'])
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def show_finalize_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show confirmation dialog for finalizing a list"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        # Check permissions
+        can_finalize = False
+        if self.db.is_user_admin(user_id):
+            can_finalize = True  # Admins can finalize any list
+        elif list_info['created_by'] == user_id:
+            can_finalize = True  # Owner/creator can finalize their own list
+        
+        if not can_finalize:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'finalize_permission_denied'))
+            return
+        
+        # Get item count
+        items = self.db.get_shopping_list_by_id(list_id)
+        item_count = len(items)
+        
+        # Show confirmation dialog
+        keyboard = [
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_yes'), callback_data=f"confirm_finalize_{list_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_no'), callback_data=f"list_actions_{list_id}")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = self.get_message(user_id, 'finalize_list_confirm').format(
+            list_name=list_info['name'],
+            item_count=item_count
+        )
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def finalize_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Finalize a list (freeze it)"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        # Check permissions again
+        can_finalize = False
+        if self.db.is_user_admin(user_id):
+            can_finalize = True  # Admins can finalize any list
+        elif list_info['created_by'] == user_id:
+            can_finalize = True  # Owner/creator can finalize their own list
+        
+        if not can_finalize:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'finalize_permission_denied'))
+            return
+        
+        # Freeze the list
+        if self.db.freeze_list(list_id):
+            # Notify all users who have access to this list
+            await self.notify_list_finalized(update, context, list_id)
+            
+            success_message = self.get_message(user_id, 'list_finalized').format(
+                list_name=list_info['name']
+            )
+            
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="manage_lists_admin")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text("❌ Failed to finalize list. Please try again.")
+    
+    async def unfreeze_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Unfreeze a list (restore normal functionality)"""
+        user_id = update.effective_user.id
+        
+        # Only admins can unfreeze lists
+        if not self.db.is_user_admin(user_id):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'finalize_permission_denied'))
+            return
+        
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        # Unfreeze the list
+        if self.db.unfreeze_list(list_id):
+            success_message = self.get_message(user_id, 'list_unfrozen').format(
+                list_name=list_info['name']
+            )
+            
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_lists'), callback_data="manage_lists_admin")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text("❌ Failed to unfreeze list. Please try again.")
+    
+    async def notify_list_finalized(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Notify all users that a list has been finalized"""
+        list_info = self.db.get_list_by_id(list_id)
+        frozen_info = self.db.get_frozen_info(list_id)
+        
+        # Get all users who should be notified based on list type
+        if list_info['list_type'] == 'shared':
+            # For shared lists, notify all authorized users
+            users = self.db.get_all_authorized_users()
+        elif list_info['list_type'] == 'personal':
+            # For personal lists, notify only the creator
+            users = [{'user_id': list_info['created_by']}]
+        elif list_info['list_type'] == 'custom_shared':
+            # For custom shared lists, notify creator + shared users
+            users = [{'user_id': list_info['created_by']}]
+            shared_users = self.db.get_custom_shared_list_users(list_id)
+            for shared_user in shared_users:
+                users.append({'user_id': shared_user['user_id']})
+        
+        finalizer_name = f"{update.effective_user.first_name} {update.effective_user.last_name}".strip()
+        
+        for user in users:
+            try:
+                user_lang = self.db.get_user_language(user['user_id'])
+                if user_lang == 'he':
+                    notification_msg = f"🔒 **רשימה נסגרה**\n\n📋 **{list_info['name']}** נסגרה על ידי **{finalizer_name}**.\n\nהרשימה כעת במצב רשימת מכולת - סמן פריטים כנקנו או לא נמצאו!"
+                else:
+                    notification_msg = f"🔒 **List Finalized**\n\n📋 **{list_info['name']}** has been finalized by **{finalizer_name}**.\n\nThe list is now in shopping checklist mode - mark items as bought or not found!"
+                
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text=notification_msg
+                )
+            except Exception as e:
+                logging.error(f"Failed to notify user {user['user_id']} about finalized list: {e}")
+    
+    async def mark_item_bought(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
+        """Mark an item as bought in frozen mode"""
+        user_id = update.effective_user.id
+        
+        # Check if item exists and get list info
+        item_info = self.db.get_shopping_item_by_id(item_id)
+        if not item_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
+            return
+        
+        # Check if the list is frozen
+        if not self.db.is_list_frozen(item_info['list_id']):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'frozen_mode_action_denied'))
+            return
+        
+        # Mark item as bought
+        if self.db.mark_item_status(item_id, 'bought', user_id):
+            success_message = self.get_message(user_id, 'item_marked_bought').format(item_name=item_info['name'])
+            await update.callback_query.answer(success_message, show_alert=True)
+            
+            # Return to the frozen list view
+            await self.view_list_items(update, context, item_info['list_id'])
+        else:
+            await update.callback_query.edit_message_text("❌ Failed to mark item as bought.")
+    
+    async def mark_item_not_found(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
+        """Mark an item as not found in frozen mode"""
+        user_id = update.effective_user.id
+        
+        # Check if item exists and get list info
+        item_info = self.db.get_shopping_item_by_id(item_id)
+        if not item_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
+            return
+        
+        # Check if the list is frozen
+        if not self.db.is_list_frozen(item_info['list_id']):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'frozen_mode_action_denied'))
+            return
+        
+        # Mark item as not found
+        if self.db.mark_item_status(item_id, 'not_found', user_id):
+            success_message = self.get_message(user_id, 'item_marked_not_found').format(item_name=item_info['name'])
+            await update.callback_query.answer(success_message, show_alert=True)
+            
+            # Return to the frozen list view
+            await self.view_list_items(update, context, item_info['list_id'])
+        else:
+            await update.callback_query.edit_message_text("❌ Failed to mark item as not found.")
     
     async def show_categories_for_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show categories for adding items to a specific list"""
@@ -5187,8 +5420,59 @@ class ShoppingBot:
             await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
             return
         
+        # Check if list is frozen
+        list_is_frozen = self.db.is_list_frozen(list_id)
+        
         items = self.db.get_shopping_list_by_id(list_id)
         
+        # Handle frozen list display
+        if list_is_frozen:
+            frozen_message = self.get_message(user_id, 'list_is_frozen')
+            keyboard = []
+            
+            if not items:
+                message = f"🔒 **{list_info['name']}**\n\n{frozen_message}\n\n{self.get_message(user_id, 'list_empty')}"
+            else:
+                message = f"🔒 **{list_info['name']}**\n\n{frozen_message}\n\n"
+                current_category = None
+            
+                for item in items:
+                    if item['category'] != current_category:
+                        current_category = item['category']
+                        category_name = self.get_category_name(user_id, current_category) if current_category else 'Custom'
+                        message += f"\n{category_name}:\n"
+                    
+                    message += f"• {item['name']}"
+                    if item['notes']:
+                        message += f" ({item['notes']})"
+                    if item['item_notes']:
+                        for note_info in item['item_notes']:
+                            message += f"\n  📝 {note_info['note']} - {note_info['user_name']}"
+                    
+                    message += "\n"
+                
+                # Add Buy/Bought and Not Found options for frozen lists
+                if items:
+                    # Organize items by category for better UI
+                    current_category = None
+                    for i, item in enumerate(items):
+                        if item['category'] != current_category:
+                            current_category = item['category']
+                            if i > 0:  # Add separator except for first category
+                                keyboard.append([])
+                        
+                        keyboard.append([
+                            InlineKeyboardButton(f"✅ {item['name']}", callback_data=f"mark_bought_{item['id']}"),
+                            InlineKeyboardButton(f"❌ {item['name']}", callback_data=f"mark_not_found_{item['id']}")
+                        ])
+            
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            return
+        
+        # Handle normal (unfrozen) list display
         if not items:
             message = f"📝 {list_info['name']}\n\n{self.get_message(user_id, 'list_empty')}"
         else:
@@ -5208,7 +5492,7 @@ class ShoppingBot:
                     for note_info in item['item_notes']:
                         message += f"\n  📝 {note_info['note']} - {note_info['user_name']}"
                 
-                # Add delete command for admins
+                # Add delete command for admins (only for unfrozen lists)
                 if self.db.is_user_admin(user_id):
                     message += f"\n  🗑️ /delete_{item['id']}"
                 
@@ -5735,8 +6019,127 @@ class ShoppingBot:
         
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
     
-    async def confirm_reset_list_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
-        """Show reset list items confirmation"""
+    async def show_reset_options(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show granular reset options menu"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        items = self.db.get_shopping_list_by_id(list_id)
+        item_count = len(items)
+        
+        # Check if list is frozen - if so, show bought items count
+        list_is_frozen = self.db.is_list_frozen(list_id)
+        bought_count = 0
+        if list_is_frozen:
+            # Count bought items for this user
+            try:
+                for item in items:
+                    status = self.db.get_item_status(item['id'], user_id)
+                    if status == 'bought':
+                        bought_count += 1
+            except:
+                pass
+        
+        keyboard = []
+        
+        # Option 1: Remove Specific Items (always available)
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_remove_specific_items'), callback_data=f"remove_specific_items_{list_id}")])
+        
+        # Option 2: Reset Bought Items Only (only for frozen lists)
+        if list_is_frozen and bought_count > 0:
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_bought_items'), callback_data=f"reset_bought_items_{list_id}")])
+        
+        # Option 3: Reset Whole List (always available)
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_whole_list'), callback_data=f"reset_whole_list_{list_id}")])
+        
+        # Option 4: Cancel
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_cancel_reset'), callback_data=f"list_actions_{list_id}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = self.get_message(user_id, 'reset_options_message').format(
+            list_name=list_info['name'],
+            item_count=item_count
+        )
+        
+        # Add bought items info if frozen
+        if list_is_frozen:
+            message += f"\n✅ **Bought items: {bought_count}**"
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def show_remove_specific_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show list of items to remove selectively"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        items = self.db.get_shopping_list_by_id(list_id)
+        
+        if not items:
+            await update.callback_query.edit_message_text("📝 " + self.get_message(user_id, 'list_empty'))
+            return
+        
+        keyboard = []
+        current_category = None
+        
+        for item in items:
+            if item['category'] != current_category:
+                current_category = item['category']
+                if keyboard:  # Add separator before new category
+                    keyboard.append([])
+            
+            keyboard.append([
+                InlineKeyboardButton(f"🗑️ {item['name']}", callback_data=f"remove_item_{list_id}_{item['id']}")
+            ])
+        
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_cancel_reset'), callback_data=f"confirm_reset_list_{list_id}")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = f"🎯 **Remove Specific Items**\n\n📋 **{list_info['name']}**\n\nSelect items to remove:"
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def reset_bought_items(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Reset bought items status for current user"""
+        user_id = update.effective_user.id
+        list_info = self.db.get_list_by_id(list_id)
+        
+        if not list_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'list_not_found'))
+            return
+        
+        # Check if list is frozen
+        if not self.db.is_list_frozen(list_id):
+            await update.callback_query.edit_message_text("❌ This function only works on frozen lists.")
+            return
+        
+        items = self.db.get_shopping_list_by_id(list_id)
+        reset_count = 0
+        
+        # Reset all bought items for this user
+        for item in items:
+            status = self.db.get_item_status(item['id'], user_id)
+            if status == 'bought':
+                if self.db.mark_item_status(item['id'], 'pending', user_id):
+                    reset_count += 1
+        
+        success_message = f"✅ **Reset Complete!**\n\n🔄 Reset **{reset_count}** bought items back to pending for **{list_info['name']}**."
+        
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_actions_{list_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def confirm_reset_whole_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
+        """Show confirmation to reset the whole list"""
         user_id = update.effective_user.id
         list_info = self.db.get_list_by_id(list_id)
         
@@ -5748,17 +6151,14 @@ class ShoppingBot:
         item_count = len(items)
         
         keyboard = [
-            [InlineKeyboardButton("✅ Yes, Reset", callback_data=f"reset_list_{list_id}")],
-            [InlineKeyboardButton("❌ Cancel", callback_data=f"list_actions_{list_id}")]
+            [InlineKeyboardButton("✅ Yes, Reset Everything", callback_data=f"reset_list_{list_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"confirm_reset_list_{list_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        message = self.get_message(user_id, 'confirm_reset_list').format(
-            list_name=list_info['name'],
-            item_count=item_count
-        )
+        message = f"⚠️⛔ **RESET WHOLE LIST CONFIRMATION** ⛔⚠️\n\n🔧 **{list_info['name']}**\n📋 Items: **{item_count}**\n\n🚨 **This will:**\n• ✅ Delete ALL items from the list\n• ✅ Clear ALL item status tracking\n• ❌ Cannot be undone!\n\n**Are you absolutely sure?**"
         
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def export_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Export list items and send to all admins and authorized users"""
