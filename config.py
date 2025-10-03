@@ -1198,6 +1198,26 @@ For support, contact your family admin.""",
         'add_all_items_button_hebrew': "✅ הוסף את כל הפריטים",
         'select_items_button_hebrew': "🎯 בחר פריטים",
         'replace_list_button_hebrew': "🔄 החלף רשימה", 
-        'back_to_templates_button_hebrew': "🔙 חזור לתבניות"
+        'back_to_templates_button_hebrew': "🔙 חזור לתבניות",
+        
+        # Additional missing button text checks Hebrew translations
+        'btn_manage_lists_hebrew': "📂 נהל רשימות",
+        'btn_admin_management_hebrew': "⚙️ ניהול", 
+        'btn_user_management_hebrew': "👥 הצעות",
+        'btn_manage_my_lists_hebrew': "📂 נהל את הרשימות שלי",
+        'btn_language_hebrew': "🌐 שפה",
+        'btn_broadcast_hebrew': "📢 שידור",
+        'btn_help_hebrew': "❓ עזרה",
+        'btn_search_hebrew': "🔍🎤 חיפוש",
+        'btn_admin_hebrew': "⚙️ מנהל",
+        'btn_categories_hebrew': "📋 קטגוריות",
+        'btn_add_item_hebrew': "➕ הוסף פריט",
+        'btn_view_list_hebrew': "📝 צפה ברשימה",
+        'btn_summary_hebrew': "📊 סיכום",
+        'btn_my_items_hebrew': "👤 הפריטים שלי",
+        'btn_reset_list_hebrew': "🗑️ אפס רשימה",
+        'btn_manage_users_hebrew': "👥 נהל משתמשים",
+        'btn_suggest_item_hebrew': "💡 הצע פריט",
+        'btn_new_item_hebrew': "➕ פריט חדש"
     }
 }
