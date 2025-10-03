@@ -1182,41 +1182,41 @@ class ShoppingBot:
             await self.show_custom_shared_lists(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_manage_lists') or 
-              text == "📂 Manage Lists" or text == "📂 נהל רשימות"):
+              text == "📂 Manage Lists" or text == self.get_message(user_id, 'btn_manage_lists_hebrew')):
             await self.manage_lists_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_admin_management') or 
-              text == "⚙️ Management" or text == "⚙️ ניהול" or
+              text == "⚙️ Management" or text == self.get_message(user_id, 'btn_admin_management_hebrew') or
               text.startswith(self.get_message(user_id, 'btn_admin_management') + " (") or
-              text.startswith("⚙️ Management (") or text.startswith("⚙️ ניהול (")):
+              text.startswith("⚙️ Management (") or text.startswith(self.get_message(user_id, 'btn_admin_management_hebrew') + " (")):
             await self.show_admin_management_menu(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_user_management') or 
-              text == "👥 Suggestions" or text == "👥 הצעות"):
+              text == "👥 Suggestions" or text == self.get_message(user_id, 'btn_user_management_hebrew')):
             await self.show_user_management_menu(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_manage_my_lists') or 
-              text == "📂 Manage My Lists" or text == "📂 נהל את הרשימות שלי"):
+              text == "📂 Manage My Lists" or text == self.get_message(user_id, 'btn_manage_my_lists_hebrew')):
             await self.show_manage_my_lists(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_language') or 
-              text == "🌐 Language" or text == "🌐 שפה"):
+              text == "🌐 Language" or text == self.get_message(user_id, 'btn_language_hebrew')):
             await self.language_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_broadcast') or 
-              text == "📢 Broadcast" or text == "📢 שידור"):
+              text == "📢 Broadcast" or text == self.get_message(user_id, 'btn_broadcast_hebrew')):
             await self.broadcast_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_help') or 
-              text == "❓ Help" or text == "❓ עזרה"):
+              text == "❓ Help" or text == self.get_message(user_id, 'btn_help_hebrew')):
             await self.help_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_search') or 
-              text == "🔍🎤 Search" or text == "🔍🎤 חיפוש"):
+              text == "🔍🎤 Search" or text == self.get_message(user_id, 'btn_search_hebrew')):
             await self.search_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_admin') or 
-              text == "⚙️ Admin" or text == "⚙️ מנהל"):
+              text == "⚙️ Admin" or text == self.get_message(user_id, 'btn_admin_hebrew')):
             await self.show_admin_menu(update, context)
             return
         
@@ -1264,55 +1264,55 @@ class ShoppingBot:
         
         # Handle main menu buttons - check both English and Hebrew
         if (text == self.get_message(user_id, 'btn_categories') or 
-            text == "📋 Categories" or text == "📋 קטגוריות"):
+            text == "📋 Categories" or text == self.get_message(user_id, 'btn_categories_hebrew')):
             await self.show_categories(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_add_item') or 
-              text == "➕ Add Item" or text == "➕ הוסף פריט"):
+              text == "➕ Add Item" or text == self.get_message(user_id, 'btn_add_item_hebrew')):
             await self.add_item_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_view_list') or 
-              text == "📝 View List" or text == "📝 צפה ברשימה"):
+              text == "📝 View List" or text == self.get_message(user_id, 'btn_view_list_hebrew')):
             await self.list_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_summary') or 
-              text == "📊 Summary" or text == "📊 סיכום"):
+              text == "📊 Summary" or text == self.get_message(user_id, 'btn_summary_hebrew')):
             await self.summary_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_my_items') or 
-              text == "👤 My Items" or text == "👤 הפריטים שלי"):
+              text == "👤 My Items" or text == self.get_message(user_id, 'btn_my_items_hebrew')):
             await self.my_items_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_help') or 
-              text == "❓ Help" or text == "❓ עזרה"):
+              text == "❓ Help" or text == self.get_message(user_id, 'btn_help_hebrew')):
             await self.help_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_language') or 
-              text == "🌐 Language" or text == "🌐 שפה"):
+              text == "🌐 Language" or text == self.get_message(user_id, 'btn_language_hebrew')):
             await self.language_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_reset_list') or 
-              text == "🗑️ Reset List" or text == "🗑️ אפס רשימה"):
+              text == "🗑️ Reset List" or text == self.get_message(user_id, 'btn_reset_list_hebrew')):
             await self.reset_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_manage_users') or 
-              text == "👥 Manage Users" or text == "👥 נהל משתמשים"):
+              text == "👥 Manage Users" or text == self.get_message(user_id, 'btn_manage_users_hebrew')):
             await self.users_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_broadcast') or 
-              text == "📢 Broadcast" or text == "📢 שידור"):
+              text == "📢 Broadcast" or text == self.get_message(user_id, 'btn_broadcast_hebrew')):
             await self.broadcast_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_suggest_item') or 
-              text == "💡 Suggest Item" or text == "💡 הצע פריט"):
+              text == "💡 Suggest Item" or text == self.get_message(user_id, 'btn_suggest_item_hebrew')):
             await self.suggest_item_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_new_item') or 
-              text == "➕ New Item" or text == "➕ פריט חדש"):
+              text == "➕ New Item" or text == self.get_message(user_id, 'btn_new_item_hebrew')):
             await self.new_item_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_search') or 
-              text == "🔍🎤 Search" or text == "🔍🎤 חיפוש"):
+              text == "🔍🎤 Search" or text == self.get_message(user_id, 'btn_search_hebrew')):
             await self.search_command(update, context)
             return
         elif text == self.get_message(user_id, 'btn_help'):
