@@ -2594,6 +2594,18 @@ class ShoppingBot:
             item_id = int(data.replace("mark_not_found_", ""))
             await self.mark_item_not_found(update, context, item_id)
         
+        elif data.startswith("mark_item_menu_"):
+            item_id = int(data.replace("mark_item_menu_", ""))
+            await self.show_mark_item_menu(update, context, item_id)
+        
+        elif data.startswith("change_status_"):
+            item_id = int(data.replace("change_status_", ""))
+            await self.show_change_status_menu(update, context, item_id)
+        
+        elif data.startswith("view_list_"):
+            list_id = int(data.replace("view_list_", ""))
+            await self.view_list_items(update, context, list_id)
+        
         elif data.startswith("remove_specific_items_"):
             list_id = int(data.replace("remove_specific_items_", ""))
             await self.show_remove_specific_items(update, context, list_id)
@@ -5357,6 +5369,100 @@ class ShoppingBot:
         else:
             await update.callback_query.edit_message_text("❌ Failed to mark item as not found.")
     
+    def get_item_shared_status(self, item_id: int) -> Dict:
+        """Get the shared status of an item (not individual tracking)"""
+        try:
+            import sqlite3
+            # Get the most recent status update for this item
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT ist.status, ist.updated_at, u.first_name, u.last_name
+                    FROM item_status_tracking ist
+                    JOIN users u ON ist.user_id = u.user_id  
+                    WHERE ist.item_id = ?
+                    ORDER BY ist.updated_at DESC
+                    LIMIT 1
+                ''', (item_id,))
+                
+                result = cursor.fetchone()
+                if result:
+                    user_name = f"{result[2]} {result[3]}".strip()
+                    return {
+                        'status': result[0],
+                        'updated_at': result[1],
+                        'user_name': user_name
+                    }
+                
+                # No status found
+                return {
+                    'status': 'pending',
+                    'updated_at': None,
+                    'user_name': None
+                }
+        except Exception as e:
+            logging.error(f"Error getting item shared status: {e}")
+            return {
+                'status': 'pending',
+                'updated_at': None,
+                'user_name': None
+            }
+    
+    async def show_mark_item_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
+        """Show menu for marking an item as bought/not found"""
+        user_id = update.effective_user.id
+        
+        item_info = self.db.get_shopping_item_by_id(item_id)
+        if not item_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
+            return
+        
+        if not self.db.is_list_frozen(item_info['list_id']):
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'frozen_mode_action_denied'))
+            return
+        
+        message = self.get_message(user_id, 'mark_item_status_title') + "\n\n"
+        message += self.get_message(user_id, 'mark_item_status_message').format(item_name=item_info['name'])
+        keyboard = [
+            [InlineKeyboardButton(self.get_message(user_id, 'found_and_bought'), callback_data=f"mark_bought_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'not_found_in_store'), callback_data=f"mark_not_found_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"view_list_{item_info['list_id']}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def show_change_status_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
+        """Show menu to change existing item status"""
+        user_id = update.effective_user.id
+        
+        item_info = self.db.get_shopping_item_by_id(item_id)
+        if not item_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
+            return
+        
+        current_status = self.get_item_shared_status(item_id)
+        
+        message = self.get_message(user_id, 'change_item_status_title') + "\n\n"
+        message += f"📦 **{item_info['name']}**\n\n"
+        
+        # Build current status message
+        if current_status['status'] == 'bought':
+            status_msg = self.get_message(user_id, 'status_bought_by').format(user_name=current_status['user_name'])
+        else:
+            status_msg = self.get_message(user_id, 'status_not_found_by').format(user_name=current_status['user_name'])
+        
+        message += self.get_message(user_id, 'change_item_status_message').format(item_name=item_info['name'], current_status=status_msg)
+        
+        keyboard = [
+            [InlineKeyboardButton(self.get_message(user_id, 'found_and_bought'), callback_data=f"mark_bought_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'not_found_in_store'), callback_data=f"mark_not_found_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"view_list_{item_info['list_id']}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
     async def show_categories_for_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show categories for adding items to a specific list"""
         user_id = update.effective_user.id
@@ -5491,10 +5597,22 @@ class ShoppingBot:
                         
                         # Add items for this category
                         for item in category_items:
-                            keyboard.append([
-                                InlineKeyboardButton(f"✅ {item['name']}", callback_data=f"mark_bought_{item['id']}"),
-                                InlineKeyboardButton(f"❌ {item['name']}", callback_data=f"mark_not_found_{item['id']}")
-                            ])
+                            # Get current item status from any user (shared status)
+                            item_status = self.get_item_shared_status(item['id'])
+                            
+                            if item_status['status'] == 'pending':
+                                # Item not marked yet - show mark options
+                                button_text = f"🔍 {item['name']}"
+                                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"mark_item_menu_{item['id']}")])
+                            else:
+                                # Item already marked - show status with option to change
+                                status_icon = "✅" if item_status['status'] == 'bought' else "❌"
+                                user_name = item_status['user_name'][:10] if item_status['user_name'] else "Someone"
+                                button_text = f"{status_icon} {item['name']} [{user_name}]"
+                                
+                                # Use color coding through emoji/symbols
+                                callback_data = f"change_status_{item['id']}"
+                                keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
                         
                         first_category = False
             
