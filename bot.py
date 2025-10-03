@@ -725,6 +725,7 @@ class ShoppingBot:
         
         # Add action buttons
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_my_lists'))])
+        keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_custom_shared_list'))])
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_new_list'))])
         
         # Add management buttons
@@ -1175,6 +1176,10 @@ class ShoppingBot:
         elif (text == self.get_message(user_id, 'btn_my_lists') or 
               text == "📋 My Lists" or text == "📋 הרשימות שלי"):
             await self.my_lists_command(update, context)
+            return
+        elif (text == self.get_message(user_id, 'btn_custom_shared_list') or 
+              text == "🤝 Custom Shared" or text == "🤝 רשימה משותפת"):
+            await self.show_custom_shared_lists(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_manage_lists') or 
               text == "📂 Manage Lists" or text == "📂 נהל רשימות"):
@@ -2598,8 +2603,22 @@ class ShoppingBot:
         elif data == "create_personal_list":
             await self.show_create_list_prompt(update, context, 'personal')
         
+        elif data == "create_custom_shared_list":
+            await self.start_custom_shared_list_creation(update, context)
+        
         elif data == "skip_description":
             await self.process_list_description(update, context, None)
+        
+        # Custom shared list handlers
+        elif data.startswith("select_user_custom_shared_"):
+            user_id_to_toggle = int(data.replace("select_user_custom_shared_", ""))
+            await self.toggle_custom_shared_user_selection(update, context, user_id_to_toggle)
+        
+        elif data == "select_all_custom_shared":
+            await self.select_all_custom_shared_users(update, context)
+        
+        elif data == "continue_custom_shared_creation":
+            await self.continue_custom_shared_list_creation(update, context)
         
         elif data.startswith("edit_list_name_"):
             list_id = int(data.replace("edit_list_name_", ""))
@@ -4616,14 +4635,27 @@ class ShoppingBot:
         """Show list type selection (Shared List vs My List)"""
         user_id = update.effective_user.id
         
-        keyboard = [
-            [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
-            [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
-        ]
+        user_lang = self.get_user_language(user_id)
+        if user_lang == 'he':
+            keyboard = [
+                [InlineKeyboardButton("🌐 רשימה משותפת", callback_data="create_shared_list")],
+                [InlineKeyboardButton("👤 הרשימות שלי", callback_data="create_personal_list")],
+                [InlineKeyboardButton("🤝 רשימה משותפת מותאמת", callback_data="create_custom_shared_list")],
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+            ]
+        else:
+            keyboard = [
+                [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
+                [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
+                [InlineKeyboardButton("🤝 Custom Shared", callback_data="create_custom_shared_list")],
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+            ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        message = "📋 **Create New List**\n\nChoose the type of list you want to create:\n\n🌐 **Shared List** - Visible to all admins and authorized users\n👤 **My List** - Only visible to you"
+        if user_lang == 'he':
+            message = "📋 **צור רשימה חדשה**\n\nבחר את סוג הרשימה שברצונך ליצור:\n\n🌐 **רשימה משותפת** - נראית לכל המנהלים והמשתמשים המורשים\n👤 **הרשימות שלי** - נראית רק לך\n🤝 **רשימה משותפת מותאמת** - שתף עם משתמשים ומנהלים ספציפיים"
+        else:
+            message = "📋 **Create New List**\n\nChoose the type of list you want to create:\n\n🌐 **Shared List** - Visible to all admins and authorized users\n👤 **My List** - Only visible to you\n🤝 **Custom Shared List** - Share with specific users and admins"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -4638,6 +4670,8 @@ class ShoppingBot:
         
         if list_type == 'shared':
             prompt_text = "🌐 **Create Shared List**\n\nEnter a name for your shared list:"
+        elif list_type == 'custom_shared':
+            prompt_text = self.get_message(user_id, 'create_custom_shared_list_prompt')
         else:  # personal
             prompt_text = "👤 **Create My List**\n\nEnter a name for your personal list:"
         
@@ -4662,6 +4696,11 @@ class ShoppingBot:
                 return
         
         context.user_data['new_list_name'] = list_name.strip()
+        
+        # Special handling for custom shared lists
+        if context.user_data.get('custom_shared_list_creation'):
+            await self.show_custom_shared_list_user_selection(update, context)
+            return
         
         # Ask for description
         keyboard = [
@@ -4712,6 +4751,186 @@ class ShoppingBot:
             elif update.callback_query:
                 await update.callback_query.message.reply_text(error_text)
     
+    async def start_custom_shared_list_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start the custom shared list creation process with user selection"""
+        user_id = update.effective_user.id
+        
+        # Clear any previous state
+        context.user_data.pop('waiting_for_list_name', None)
+        context.user_data.pop('new_list_type', None)
+        context.user_data['custom_shared_list_creation'] = True
+        
+        # Show list name prompt
+        await self.show_create_list_prompt(update, context, 'custom_shared')
+    
+    async def show_custom_shared_lists(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show custom shared lists that the user can access"""
+        user_id = update.effective_user.id
+        
+        # Get custom shared lists accessible to this user
+        custom_shared_lists = self.db.get_user_accessible_lists(user_id, ['custom_shared'])
+        
+        if not custom_shared_lists:
+            message = self.get_message(user_id, 'custom_shared_lists_empty')
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]]
+        else:
+            message = self.get_message(user_id, 'custom_shared_lists_available')
+            keyboard = []
+            
+            for list_info in custom_shared_lists:
+                keyboard.append([InlineKeyboardButton(
+                    f"📋 {list_info['name']}",
+                    callback_data=f"list_menu_{list_info['id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def show_custom_shared_list_user_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show user selection for custom shared list sharing"""
+        user_id = update.effective_user.id
+        
+        # Get all authorized users except the creator
+        all_users = self.db.get_all_users()
+        available_users = [user for user in all_users if user['user_id'] != user_id and user['is_authorized']]
+        
+        if not available_users:
+            message = "❌ No other authorized users available to share with."
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.message:
+                await update.message.reply_text(message, reply_markup=reply_markup)
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+            return
+        
+        # Store available users for selection
+        context.user_data['custom_shared_list_users'] = available_users
+        context.user_data['selected_custom_shared_users'] = []
+        
+        message = self.get_message(user_id, 'share_custom_shared_list_title') + "\n\n"
+        message += self.get_message(user_id, 'share_custom_shared_list_message').format(
+            list_name=context.user_data.get('new_list_name'),
+            user_count=len(available_users)
+        )
+        
+        keyboard = []
+        
+        # Add user selection buttons
+        for user in available_users:
+            user_display = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+            if user.get('username'):
+                user_display += f" (@{user['username']})"
+            
+            keyboard.append([InlineKeyboardButton(
+                f"👤 {user_display}",
+                callback_data=f"select_user_custom_shared_{user['user_id']}"
+            )])
+        
+        # Add control buttons
+        keyboard.append([
+            InlineKeyboardButton(self.get_message(user_id, 'btn_continue_with_selected'), callback_data="continue_custom_shared_creation"),
+            InlineKeyboardButton(self.get_message(user_id, 'btn_select_all'), callback_data="select_all_custom_shared")
+        ])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def toggle_custom_shared_user_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_id_to_toggle: int):
+        """Toggle user selection for custom shared list"""
+        selected_users = context.user_data.get('selected_custom_shared_users', [])
+        
+        if user_id_to_toggle in selected_users:
+            selected_users.remove(user_id_to_toggle)
+        else:
+            selected_users.append(user_id_to_toggle)
+        
+        context.user_data['selected_custom_shared_users'] = selected_users
+        
+        # Refresh the selection screen
+        await self.show_custom_shared_list_user_selection(update, context)
+    
+    async def select_all_custom_shared_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Select all users for custom shared list"""
+        available_users = context.user_data.get('custom_shared_list_users', [])
+        all_user_ids = [user['user_id'] for user in available_users]
+        context.user_data['selected_custom_shared_users'] = all_user_ids
+        
+        # Refresh the selection screen
+        await self.show_custom_shared_list_user_selection(update, context)
+    
+    async def continue_custom_shared_list_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Continue with custom shared list creation after user selection"""
+        user_id = update.effective_user.id
+        selected_users = context.user_data.get('selected_custom_shared_users', [])
+        
+        if not selected_users:
+            await update.callback_query.edit_message_text(
+                "❌ Please select at least one user to share the list with."
+            )
+            return
+        
+        list_name = context.user_data.get('new_list_name')
+        
+        # Create the list with custom_shared type
+        list_id = self.db.create_list(
+            name=list_name,
+            description=f"Custom shared list with {len(selected_users)} users",
+            created_by=user_id,
+            list_type='custom_shared'
+        )
+        
+        if list_id:
+            # Store the list sharing information
+            self.db.create_list_sharing(list_id, selected_users)
+            
+            # Create success message and notify selected users
+            success_text = self.get_message(user_id, 'custom_shared_list_created').format(
+                list_name=list_name,
+                user_count=len(selected_users)
+            )
+            
+            # Notify selected users
+            available_users = context.user_data.get('custom_shared_list_users', [])
+            creator_name = f"{update.effective_user.first_name} {update.effective_user.last_name}".strip()
+            if update.effective_user.username:
+                creator_name += f" (@{update.effective_user.username})"
+            
+            for selected_user_id in selected_users:
+                user_to_notify = next((u for u in available_users if u['user_id'] == selected_user_id), None)
+                if user_to_notify:
+                    try:
+                        # Get user language for notification
+                        notify_user_lang = self.db.get_user_language(selected_user_id)
+                        message = self.get_message(selected_user_id, 'new_custom_shared_list_notification').format(
+                            list_name=list_name,
+                            creator_name=creator_name
+                        )
+                        await self.application.bot.send_message(
+                            chat_id=selected_user_id,
+                            text=message
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to notify user {selected_user_id}: {e}")
+            
+            await update.callback_query.edit_message_text(success_text, parse_mode='Markdown')
+            await self.show_main_menu(update, context)
+        else:
+            error_text = "❌ Failed to create custom shared list. Please try again."
+            await update.callback_query.edit_message_text(error_text)
+
     async def my_lists_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle my lists button/command"""
         if not self.db.is_user_authorized(update.effective_user.id):
