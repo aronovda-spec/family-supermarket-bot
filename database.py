@@ -3202,7 +3202,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT id, name, notes, category, list_id 
+                    SELECT id, item_name, notes, category, list_id 
                     FROM shopping_items WHERE id = ?
                 ''', (item_id,))
                 result = cursor.fetchone()
@@ -3210,7 +3210,7 @@ class Database:
                 if result:
                     return {
                         'id': result[0],
-                        'name': result[1],
+                        'name': result[1],  # item_name from DB
                         'notes': result[2],
                         'category': result[3],
                         'list_id': result[4]
