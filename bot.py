@@ -2418,6 +2418,10 @@ class ShoppingBot:
             list_id = int(data.replace("list_actions_", ""))
             await self.show_list_actions(update, context, list_id)
         
+        elif data.startswith("list_menu_"):
+            list_id = int(data.replace("list_menu_", ""))
+            await self.show_list_menu(update, context, list_id)
+        
         elif data.startswith("view_list_"):
             list_id = int(data.replace("view_list_", ""))
             await self.view_list_items(update, context, list_id)
@@ -5207,6 +5211,7 @@ class ShoppingBot:
         keyboard = [
             [InlineKeyboardButton(self.get_message(user_id, 'btn_yes'), callback_data=f"confirm_finalize_{list_id}")],
             [InlineKeyboardButton(self.get_message(user_id, 'btn_no'), callback_data=f"list_actions_{list_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
