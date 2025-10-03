@@ -4244,6 +4244,7 @@ class ShoppingBot:
         """Show voice search prompt with availability check"""
         try:
             user_id = update.effective_user.id
+            user_lang = self.get_user_language(user_id)
             
             # Check voice search availability
             availability_status = self.check_voice_search_availability()
@@ -6555,7 +6556,7 @@ class ShoppingBot:
         keyboard = []
         
         # Option 1: Remove Items (always available)
-        keyboard.append([InlineKeyboardButton("🗑️ Remove Items", callback_data=f"remove_items_{list_id}")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_remove_items'), callback_data=f"remove_items_{list_id}")])
         
         # Option 2: Reset Bought Items Only (only for frozen lists)
         if list_is_frozen and bought_count > 0:
@@ -7703,9 +7704,9 @@ class ShoppingBot:
             user_lang = self.get_user_language(user_id)
             last_reminder = maintenance['last_reminder'] or 'Never'
             if user_lang == 'he':
-                message = f"📅 {self.get_message(user_id, 'current_maintenance_schedule_title_hebrew')}\n\nיום: {maintenance['scheduled_day']}\nשעה: {maintenance['scheduled_time']}\nתזכורת אחרונה: {last_reminder}\nתזכורות נשלחו: {maintenance['reminder_count']}"
+                message = f"📅 {self.get_message(user_id, 'current_maintenance_schedule_title_hebrew')}\n\n{self.get_message(user_id, 'day_label_hebrew')}: {maintenance['scheduled_day']}\n{self.get_message(user_id, 'time_label_hebrew')}: {maintenance['scheduled_time']}\n{self.get_message(user_id, 'last_reminder_label_hebrew')}: {last_reminder}\n{self.get_message(user_id, 'reminders_sent_label_hebrew')}: {maintenance['reminder_count']}"
             else:
-                message = f"📅 Current Maintenance Schedule\n\nDay: {maintenance['scheduled_day']}\nTime: {maintenance['scheduled_time']}\nLast reminder: {last_reminder}\nReminders sent: {maintenance['reminder_count']}"
+                message = f"📅 {self.get_message(user_id, 'current_maintenance_schedule_title')}\n\n{self.get_message(user_id, 'day_label')}: {maintenance['scheduled_day']}\n{self.get_message(user_id, 'time_label')}: {maintenance['scheduled_time']}\n{self.get_message(user_id, 'last_reminder_label')}: {last_reminder}\n{self.get_message(user_id, 'reminders_sent_label')}: {maintenance['reminder_count']}"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7721,11 +7722,7 @@ class ShoppingBot:
         if success:
             message = self.get_message(user_id, 'maintenance_disabled')
         else:
-            user_lang = self.get_user_language(user_id)
-            if user_lang == 'he':
-                message = "❌ שגיאה בהשבתת מצב תחזוקה."
-            else:
-                message = "❌ Error disabling maintenance mode."
+            message = self.get_message(user_id, 'maintenance_disable_error')
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7799,7 +7796,19 @@ class ShoppingBot:
                         reset_count += 1
             
             if bought_count > 0:
-                message = f"✅ **Bought Items Reset Complete**\n\n🛒 **{self.get_message(user_id, 'supermarket_list')}** bought items reset.\n\n📊 Reset: {reset_count}/{bought_count} bought items\n🔄 Items are now back to 'pending' status"
+                user_lang = self.get_user_language(user_id)
+                if user_lang == 'he':
+                    message = self.get_message(user_id, 'bought_items_reset_complete_hebrew').format(
+                        supermarket_list=self.get_message(user_id, 'supermarket_list'),
+                        reset_count=reset_count,
+                        bought_count=bought_count
+                    )
+                else:
+                    message = self.get_message(user_id, 'bought_items_reset_complete').format(
+                        supermarket_list=self.get_message(user_id, 'supermarket_list'),
+                        reset_count=reset_count,
+                        bought_count=bought_count
+                    )
                 
                 # Update maintenance reminder
                 maintenance = self.db.get_maintenance_mode(1)
@@ -7809,7 +7818,15 @@ class ShoppingBot:
                 # Notify users about bought items reset
                 await self.notify_users_bought_items_reset(update, context, reset_count)
             else:
-                message = f"📋 **No Bought Items Found**\n\n🛒 **{self.get_message(user_id, 'supermarket_list')}** - No bought items to reset.\n\n✅ All items are still pending."
+                user_lang = self.get_user_language(user_id)
+                if user_lang == 'he':
+                    message = self.get_message(user_id, 'no_bought_items_found_hebrew').format(
+                        supermarket_list=self.get_message(user_id, 'supermarket_list')
+                    )
+                else:
+                    message = self.get_message(user_id, 'no_bought_items_found').format(
+                        supermarket_list=self.get_message(user_id, 'supermarket_list')
+                    )
                 
                 # Update maintenance reminder anyway
                 maintenance = self.db.get_maintenance_mode(1)
