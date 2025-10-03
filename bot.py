@@ -2551,6 +2551,18 @@ class ShoppingBot:
             item_id = int(parts[3])
             await self.remove_individual_item(update, context, list_id, item_id)
         
+        elif data.startswith("mark_bought_and_remove_"):
+            item_id = int(data.replace("mark_bought_and_remove_", ""))
+            await self.mark_and_remove_item(update, context, item_id, 'bought')
+        
+        elif data.startswith("mark_not_found_and_remove_"):
+            item_id = int(data.replace("mark_not_found_and_remove_", ""))
+            await self.mark_and_remove_item(update, context, item_id, 'not_found')
+        
+        elif data.startswith("confirm_remove_item_"):
+            item_id = int(data.replace("confirm_remove_item_", ""))
+            await self.direct_remove_item(update, context, item_id)
+        
         
         
         
@@ -5661,6 +5673,22 @@ class ShoppingBot:
             )])
         
         # Add individual item removal options
+        # Add Reset Bought Items Only option for frozen lists
+        list_is_frozen = self.db.is_list_frozen(list_id)
+        if list_is_frozen:
+            # Count bought items for this user
+            bought_count = 0
+            for item in items:
+                status = self.db.get_item_status(item['id'], user_id)
+                if status == 'bought':
+                    bought_count += 1
+            
+            if bought_count > 0:
+                keyboard.append([InlineKeyboardButton(
+                    self.get_message(user_id, 'btn_reset_bought_items'), 
+                    callback_data=f"reset_bought_items_{list_id}"
+                )])
+        
         keyboard.append([InlineKeyboardButton(
             "🔍 Remove Individual Items", 
             callback_data=f"remove_individual_{list_id}"
@@ -5823,6 +5851,81 @@ class ShoppingBot:
             await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
             return
         
+        # Show confirmation with Bought/Not Found options
+        message = self.get_message(user_id, 'remove_item_confirmation').format(
+            item_name=item_to_remove['name'],
+            list_name=list_info['name']
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_bought'), callback_data=f"mark_bought_and_remove_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_not_found_button'), callback_data=f"mark_not_found_and_remove_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_just_remove'), callback_data=f"confirm_remove_item_{item_id}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_cancel_button'), callback_data=f"remove_items_{list_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def mark_and_remove_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int, status: str):
+        """Mark an item as bought/not found and then remove it"""
+        user_id = update.effective_user.id
+        
+        # Get item and list info
+        item_info = self.db.get_shopping_item_by_id(item_id)
+        if not item_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
+            return
+        
+        list_info = self.db.get_list_by_id(item_info['list_id'])
+        
+        # First mark the item status in frozen lists
+        if self.db.is_list_frozen(item_info['list_id']):
+            self.db.mark_item_status(item_id, status, user_id)
+        
+        # Then remove the item
+        if self.db.delete_item(item_id):
+            # Determine appropriate notification message
+            status_msg = "bought" if status == 'bought' else "not found"
+            success_message = self.get_message(user_id, 'item_removed_with_status').format(
+                item_name=item_info['name'],
+                list_name=list_info['name'],
+                status=status_msg
+            )
+            
+            # Notify all users
+            authorized_users = self.db.get_all_authorized_users()
+            for auth_user in authorized_users:
+                try:
+                    user_lang = self.db.get_user_language(auth_user['user_id'])
+                    if user_lang == 'he':
+                        status_he = "נקנה" if status == 'bought' else "לא נמצא"
+                        notification = f"🗑️ מנהל הסיר את הפריט '{item_info['name']}' מהרשימה '{list_info['name']}' - סומן כ{status_he}"
+                    else:
+                        notification = f"🗑️ Admin removed '{item_info['name']}' from '{list_info['name']}' - marked as {status_msg}"
+                    
+                    await self.application.bot.send_message(chat_id=auth_user['user_id'], text=notification)
+                except Exception as e:
+                    logging.error(f"Error sending removal notification to user {auth_user['user_id']}: {e}")
+            
+            keyboard = [[InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{item_info['list_id']}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
+        else:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'remove_item_failed'))
+    
+    async def direct_remove_item(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
+        """Directly remove an item without marking status"""
+        user_id = update.effective_user.id
+        
+        # Get item and list info
+        item_info = self.db.get_shopping_item_by_id(item_id)
+        if not item_info:
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'item_not_found'))
+            return
+        
+        list_info = self.db.get_list_by_id(item_info['list_id'])
+        
         # Remove the item
         if self.db.delete_item(item_id):
             # Notify all users about the removal
@@ -5831,21 +5934,24 @@ class ShoppingBot:
                 try:
                     user_lang = self.db.get_user_language(auth_user['user_id'])
                     if user_lang == 'he':
-                        notification = f"🗑️ מנהל הסיר את הפריט '{item_to_remove['name']}' מהרשימה '{list_info['name']}'"
+                        notification = f"🗑️ מנהל הסיר את הפריט '{item_info['name']}' מהרשימה '{list_info['name']}'"
                     else:
-                        notification = f"🗑️ Admin removed item '{item_to_remove['name']}' from '{list_info['name']}' list"
+                        notification = f"🗑️ Admin removed item '{item_info['name']}' from '{list_info['name']}' list"
                     
                     await self.application.bot.send_message(chat_id=auth_user['user_id'], text=notification)
                 except Exception as e:
                     logging.error(f"Error sending removal notification to user {auth_user['user_id']}: {e}")
             
-            success_message = f"✅ Successfully removed '{item_to_remove['name']}' from the list."
-            keyboard = [[InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{list_id}")]]
+            success_message = self.get_message(user_id, 'item_removed_direct').format(
+                item_name=item_info['name'],
+                list_name=list_info['name']
+            )
+            keyboard = [[InlineKeyboardButton("🏠 Back to Remove Menu", callback_data=f"remove_items_{item_info['list_id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.callback_query.edit_message_text(success_message, reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text(self.get_message(update.effective_user.id, 'remove_item_failed'))
+            await update.callback_query.edit_message_text(self.get_message(user_id, 'remove_item_failed'))
     
     async def show_multiple_items_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, list_id: int):
         """Show multiple items selection interface"""
@@ -6287,6 +6393,14 @@ class ShoppingBot:
         # Add admin-only options (only list-specific functions)
         if self.db.is_user_admin(user_id):
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_export'), callback_data=f"export_list_{list_id}")])
+            
+            # Add Finalize/Unfreeze button based on current state
+            list_is_frozen = self.db.is_list_frozen(list_id)
+            if list_is_frozen:
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_unfreeze_list'), callback_data=f"unfreeze_list_{list_id}")])
+            else:
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_finalize_list'), callback_data=f"finalize_list_{list_id}")])
+            
             keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_items'), callback_data=f"confirm_reset_list_{list_id}")])
             keyboard.append([InlineKeyboardButton("🗑️ Remove Items", callback_data=f"remove_items_{list_id}")])
             
