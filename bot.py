@@ -724,8 +724,8 @@ class ShoppingBot:
             keyboard.append(row)
         
         # Add action buttons
-        keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_new_list'))])
         keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_my_lists'))])
+        keyboard.append([KeyboardButton(self.get_message(user_id, 'btn_new_list'))])
         
         # Add management buttons
         if self.db.is_user_admin(user_id):
@@ -4769,7 +4769,7 @@ class ShoppingBot:
         
         if not all_lists:
             message = self.get_message(user_id, 'manage_lists_empty')
-            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="admin_management")]]
         else:
             message = self.get_message(user_id, 'manage_lists_title')
             keyboard = []
@@ -4802,7 +4802,7 @@ class ShoppingBot:
                     callback_data=f"list_actions_{list_info['id']}"
                 )])
             
-            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")])
+            keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="admin_management")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -9591,6 +9591,7 @@ class ShoppingBot:
             ])
         
         # Add creation buttons
+        user_lang = self.get_user_language(user_id)
         if user_lang == 'he':
             keyboard.append([
                 InlineKeyboardButton("➕ צור מהרשימה הנוכחית", callback_data=f"create_user_template_from_list_{list_id}"),
