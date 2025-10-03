@@ -6434,7 +6434,11 @@ class ShoppingBot:
             except Exception as e:
                 logging.error(f"Error sending removal notification to user {auth_user['user_id']}: {e}")
         
-        success_message = f"✅ Successfully removed {removed_count} items from {category_name} category."
+        user_lang = self.get_user_language(user_id)
+        if user_lang == 'he':
+            success_message = f"✅ הוסרו בהצלחה {removed_count} פריטים מקטגוריית {category_name}."
+        else:
+            success_message = f"✅ Successfully removed {removed_count} items from {category_name} category."
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -7214,7 +7218,7 @@ class ShoppingBot:
                 message = self.get_message(user_id, 'no_lists_found_template_hebrew')
                 back_to_management_text = self.get_message(user_id, 'back_to_management_template_hebrew')
             else:
-                message = "❌ No lists found."
+                message = self.get_message(user_id, 'no_lists_found_template')
                 back_to_management_text = self.get_message(user_id, 'btn_back_to_management')
             keyboard = [[InlineKeyboardButton(back_to_management_text, callback_data="admin_management")]]
         else:
@@ -7524,7 +7528,11 @@ class ShoppingBot:
         available_items = [item for item in items if item not in deleted_items]
         
         if not available_items:
-            message = f"📂 **{category_name}**\n\nAll items in this category have already been deleted."
+            user_lang = self.get_user_language(user_id)
+            if user_lang == 'he':
+                message = f"📂 **{category_name}**\n\nכל הפריטים בקטגוריה זו כבר נמחקו."
+            else:
+                message = f"📂 **{category_name}**\n\nAll items in this category have already been deleted."
             
             keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'back_to_management_title_hebrew'), callback_data="delete_permanent_items")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7546,7 +7554,12 @@ class ShoppingBot:
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'back_to_management_title_hebrew'), callback_data="delete_permanent_items")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = f"🗑️ **Delete Items from {category_name}**\n\nSelect an item to permanently remove from this category:"
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"🗑️ **מחק פריטים מ{category_name}**\n\nבחר פריט להסרה קבועה מקטגוריה זו:"
+        else:
+            message = f"🗑️ **Delete Items from {category_name}**\n\nSelect an item to permanently remove from this category:"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -7565,14 +7578,19 @@ class ShoppingBot:
             return
         
         category_name = self.get_category_name(user_id, category_key)
+        user_lang = self.get_user_language(user_id)
         
         keyboard = [
-            [InlineKeyboardButton("✅ Yes, Delete Permanently", callback_data=f"delete_permanent_item_{category_key}_{item_name}")],
-            [InlineKeyboardButton("❌ Cancel", callback_data=f"delete_permanent_items_{category_key}")]
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_yes_delete_permanently'), callback_data=f"delete_permanent_item_{category_key}_{item_name}")],
+            [InlineKeyboardButton(self.get_message(user_id, 'btn_cancel'), callback_data=f"delete_permanent_items_{category_key}")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = f"⚠️ **Confirm Permanent Deletion**\n\nAre you sure you want to permanently remove:\n\n**{item_name}**\n\nfrom the **{category_name}** category?\n\nThis item will no longer appear in the 'Add Item' options!"
+        
+        if user_lang == 'he':
+            message = f"⚠️ **אשר מחיקה קבועה**\n\nהאם אתה בטוח שברצונך להסיר לצמיתות:\n\n**{item_name}**\n\nמקטגוריית **{category_name}**?\n\nפריט זה לא יופיע עוד באפשרויות 'הוסף פריט'!"
+        else:
+            message = f"⚠️ **Confirm Permanent Deletion**\n\nAre you sure you want to permanently remove:\n\n**{item_name}**\n\nfrom the **{category_name}** category?\n\nThis item will no longer appear in the 'Add Item' options!"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -7592,7 +7610,11 @@ class ShoppingBot:
         
         # Check if category exists
         if category_key not in CATEGORIES:
-            message = "❌ Category not found."
+            user_lang = self.get_user_language(user_id)
+            if user_lang == 'he':
+                message = "❌ קטגוריה לא נמצאה."
+            else:
+                message = "❌ Category not found."
             if update.message:
                 await update.message.reply_text(message)
             elif update.callback_query:
@@ -7600,19 +7622,26 @@ class ShoppingBot:
             return
         
         category_name = self.get_category_name(user_id, category_key)
+        user_lang = self.get_user_language(user_id)
         
         # Add the item to deleted items list (we'll store this in the database)
         success = self.db.add_deleted_item(category_key, item_name, user_id)
         
         if success:
-            message = f"✅ **Item Deleted Successfully**\n\n**{item_name}** has been permanently removed from the **{category_name}** category.\n\nThis item will no longer appear in the 'Add Item' options!"
+            if user_lang == 'he':
+                message = f"✅ **פריט נמחק בהצלחה**\n\n**{item_name}** הוסר לצמיתות מקטגוריית **{category_name}**.\n\nפריט זה לא יופיע עוד באפשרויות 'הוסף פריט'!"
+            else:
+                message = f"✅ **Item Deleted Successfully**\n\n**{item_name}** has been permanently removed from the **{category_name}** category.\n\nThis item will no longer appear in the 'Add Item' options!"
             
             # Notify all authorized users
             await self.notify_item_deletion(item_name, category_name)
         else:
-            message = "❌ Failed to delete item. Please try again."
+            if user_lang == 'he':
+                message = "❌ נכשל במחיקת הפריט. אנא נסה שוב."
+            else:
+                message = "❌ Failed to delete item. Please try again."
         
-        keyboard = [[InlineKeyboardButton("🔙 Back to Delete Permanent Items", callback_data="delete_permanent_items")]]
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_delete_permanent_items'), callback_data="delete_permanent_items")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if update.message:
@@ -8350,7 +8379,7 @@ class ShoppingBot:
             
             message = self.get_message(user_id, 'manage_categories_title')
             keyboard = [
-                [InlineKeyboardButton(f"💭 Manage Categories Suggested ({category_suggestions_pending})", callback_data="manage_category_suggestions")],
+                [InlineKeyboardButton(f"💭 {self.get_message(user_id, 'btn_manage_categories_suggested')} ({category_suggestions_pending})", callback_data="manage_category_suggestions")],
                 [InlineKeyboardButton(self.get_message(user_id, 'btn_new_category'), callback_data="new_category_admin")],
                 [InlineKeyboardButton(self.get_message(user_id, 'btn_rename_categories'), callback_data="rename_categories_admin")]
             ]
@@ -9986,9 +10015,9 @@ class ShoppingBot:
             ])
         else:
             keyboard.extend([
-                [InlineKeyboardButton("➕ Create from List", callback_data="create_system_template_global")],
-                [InlineKeyboardButton("➕ Create Empty Template", callback_data="create_empty_system_template_global")],
-                [InlineKeyboardButton("🔙 Back to Template Management", callback_data="template_management_menu")]
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_create_from_list'), callback_data="create_system_template_global")],
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_create_empty_template'), callback_data="create_empty_system_template_global")],
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_template_management'), callback_data="template_management_menu")]
             ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -10114,10 +10143,15 @@ class ShoppingBot:
                 callback_data=f"delete_items_{category['category_key']}"
             )])
         
-        keyboard.append([InlineKeyboardButton("🔙 Back to Manage Items", callback_data="manage_items_admin")])
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_manage_items'), callback_data="manage_items_admin")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = "🗑️ **Delete Items**\n\nSelect a category to delete items from (all items, permanent and non-permanent):"
+        user_lang = self.get_user_language(user_id)
+        
+        if user_lang == 'he':
+            message = f"🗑️ **{self.get_message(user_id, 'delete_items_title_hebrew')}**\n\n{self.get_message(user_id, 'select_category_delete_items_hebrew')}"
+        else:
+            message = f"🗑️ **{self.get_message(user_id, 'delete_items_title')}**\n\n{self.get_message(user_id, 'select_category_delete_items')}"
         
         if update.message:
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -11048,15 +11082,15 @@ class ShoppingBot:
             elif is_system_template:
                 # System templates - show global management
                 keyboard = [
-                    [InlineKeyboardButton("🏛️ Manage System Templates", callback_data="system_template_management_global")],
-                    [InlineKeyboardButton("📋 Back to Templates", callback_data="template_management_menu")]
+                    [InlineKeyboardButton(self.get_message(user_id, 'btn_manage_system_templates'), callback_data="system_template_management_global")],
+                    [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_templates'), callback_data="template_management_menu")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             else:
                 keyboard = [
-                    [InlineKeyboardButton("📝 View Templates", callback_data=f"templates_list_{data['list_id']}")],
-                    [InlineKeyboardButton("📋 Back to List", callback_data=f"list_menu_{data['list_id']}")]
+                    [InlineKeyboardButton(self.get_message(user_id, 'btn_view_templates'), callback_data=f"templates_list_{data['list_id']}")],
+                    [InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{data['list_id']}")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
