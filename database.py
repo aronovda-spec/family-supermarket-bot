@@ -117,6 +117,20 @@ class Database:
                     )
                 ''')
                 
+                # List sharing table for custom shared lists
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS list_sharing (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        list_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        can_edit BOOLEAN DEFAULT TRUE,
+                        shared_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (list_id) REFERENCES lists (id),
+                        FOREIGN KEY (user_id) REFERENCES users (user_id),
+                        UNIQUE(list_id, user_id)
+                    )
+                ''')
+                
                 # Create default supermarket list if it doesn't exist
                 cursor.execute('SELECT COUNT(*) FROM lists WHERE list_type = "supermarket"')
                 if cursor.fetchone()[0] == 0:
@@ -2953,4 +2967,96 @@ class Database:
                 return templates
         except Exception as e:
             logging.error(f"Error getting popular templates: {e}")
+            return []
+    
+    def create_list_sharing(self, list_id: int, user_ids: List[int]) -> bool:
+        """Create sharing records for a custom shared list"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                for user_id in user_ids:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO list_sharing (list_id, user_id)
+                        VALUES (?, ?)
+                    ''', (list_id, user_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error creating list sharing: {e}")
+            return False
+    
+    def get_user_accessible_lists(self, user_id: int, list_types: List[str] = None) -> List[Dict]:
+        """Get lists accessible to a specific user (includes custom shared lists)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Build base query
+                query = '''
+                    SELECT DISTINCT l.id, l.name, l.description, l.list_type, l.created_by, l.created_at,
+                           u.username, u.first_name, u.last_name
+                    FROM lists l
+                    LEFT JOIN users u ON l.created_by = u.user_id
+                    LEFT JOIN list_sharing ls ON l.id = ls.list_id
+                    WHERE l.is_active = TRUE
+                    AND (
+                        l.list_type IN ('supermarket', 'shared', 'personal')
+                        OR (l.list_type = 'custom_shared' AND (l.created_by = ? OR ls.user_id = ?))
+                    )
+                '''
+                params = [user_id, user_id]
+                
+                # Add list_type filter if specified
+                if list_types:
+                    placeholders = ','.join(['?' for _ in list_types])
+                    query += f' AND l.list_type IN ({placeholders})'
+                    params.extend(list_types)
+                
+                query += ' ORDER BY l.list_type, l.name'
+                
+                cursor.execute(query, params)
+                lists = []
+                for row in cursor.fetchall():
+                    lists.append({
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'list_type': row[3],
+                        'created_by': row[4],
+                        'created_at': row[5],
+                        'creator_username': row[6],
+                        'creator_first_name': row[7],
+                        'creator_last_name': row[8]
+                    })
+                return lists
+        except Exception as e:
+            logging.error(f"Error getting user accessible lists: {e}")
+            return []
+    
+    def get_custom_shared_list_users(self, list_id: int) -> List[Dict]:
+        """Get users who have access to a custom shared list"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT u.user_id, u.username, u.first_name, u.last_name, ls.can_edit, ls.shared_at
+                    FROM list_sharing ls
+                    JOIN users u ON ls.user_id = u.user_id
+                    WHERE ls.list_id = ?
+                    ORDER BY u.first_name, u.last_name
+                ''', (list_id,))
+                
+                users = []
+                for row in cursor.fetchall():
+                    users.append({
+                        'user_id': row[0],
+                        'username': row[1],
+                        'first_name': row[2],
+                        'last_name': row[3],
+                        'can_edit': row[4],
+                        'shared_at': row[5]
+                    })
+                return users
+        except Exception as e:
+            logging.error(f"Error getting custom shared list users: {e}")
             return []
