@@ -1162,7 +1162,7 @@ class ShoppingBot:
         
         # Handle menu buttons FIRST (to cancel previous operations)
         if (text == self.get_message(user_id, 'btn_supermarket_list') or 
-              text == "🛒 Supermarket List" or text == "🛒 רשימת סופר"):
+              text == "🛒 Supermarket List" or text == self.get_message(user_id, 'btn_supermarket_list_hebrew')):
             await self.supermarket_list_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_new_list') or 
@@ -4744,16 +4744,16 @@ class ShoppingBot:
                 [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
             ]
         else:
-        keyboard = [
-            [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
-            [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
+            keyboard = [
+                [InlineKeyboardButton("🌐 Shared List", callback_data="create_shared_list")],
+                [InlineKeyboardButton("👤 My List", callback_data="create_personal_list")],
                 [InlineKeyboardButton("🤝 Custom Shared", callback_data="create_custom_shared_list")],
-            [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
-        ]
+                [InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="main_menu")]
+            ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if user_lang == 'he':
-            message = "📋 **צור רשימה חדשה**\n\nבחר את סוג הרשימה שברצונך ליצור:\n\n🌐 **רשימה משותפת** - נראית לכל המנהלים והמשתמשים המורשים\n👤 **הרשימות שלי** - נראית רק לך\n🤝 **רשימה משותפת מותאמת** - שתף עם משתמשים ומנהלים ספציפיים"
+            message = self.get_message(user_id, 'create_new_list_message_hebrew')
         else:
             message = "📋 **Create New List**\n\nChoose the type of list you want to create:\n\n🌐 **Shared List** - Visible to all admins and authorized users\n👤 **My List** - Only visible to you\n🤝 **Custom Shared List** - Share with specific users and admins"
         
@@ -5030,7 +5030,7 @@ class ShoppingBot:
         else:
             error_text = "❌ Failed to create custom shared list. Please try again."
             await update.callback_query.edit_message_text(error_text)
-    
+
     async def my_lists_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle my lists button/command"""
         if not self.db.is_user_authorized(update.effective_user.id):
@@ -5350,7 +5350,7 @@ class ShoppingBot:
             try:
                 user_lang = self.db.get_user_language(user['user_id'])
                 if user_lang == 'he':
-                    notification_msg = f"🔒 **רשימה נסגרה**\n\n📋 **{list_info['name']}** נסגרה על ידי **{finalizer_name}**.\n\nהרשימה כעת במצב רשימת מכולת - סמן פריטים כנקנו או לא נמצאו!"
+                    notification_msg = self.get_message(user['user_id'], 'list_frozen_notification_hebrew') + "\n\n" + self.get_message(user['user_id'], 'list_frozen_message_hebrew').format(list_name=list_info['name'], finalizer_name=finalizer_name)
                 else:
                     notification_msg = f"🔒 **List Finalized**\n\n📋 **{list_info['name']}** has been finalized by **{finalizer_name}**.\n\nThe list is now in shopping checklist mode - mark items as bought or not found!"
                 
@@ -6597,7 +6597,7 @@ class ShoppingBot:
             if list_is_frozen:
                 message = f"🔒 **{list_info['name']}** (Frozen)\n\n📋 No items to track yet."
             else:
-            message = f"📋 {list_info['name']}\n\nNo items in this list yet."
+                message = f"📋 {list_info['name']}\n\nNo items in this list yet."
         else:
             # Enhanced summary for frozen lists
             if list_is_frozen:
@@ -6674,29 +6674,29 @@ class ShoppingBot:
                     
             else:
                 # Regular unfrozen list summary
-            categories = {}
-            for item in items:
-                category = item['category'] or 'Other'
-                if category not in categories:
-                    categories[category] = []
-                categories[category].append(item)
-            
-            message = f"📋 {list_info['name']} Summary\n\n"
-            message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
-            
-            for category, category_items in categories.items():
-                message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
-                for item in category_items:
-                    message += f"• {item['name']}"
-                    if item['notes']:
-                        message += f" ({item['notes']})"
-                    
-                    # Add delete command for admins
-                    if self.db.is_user_admin(user_id):
-                        message += f"\n  🗑️ /delete_{item['id']}"
-                    
+                categories = {}
+                for item in items:
+                    category = item['category'] or 'Other'
+                    if category not in categories:
+                        categories[category] = []
+                    categories[category].append(item)
+                
+                message = f"📋 {list_info['name']} Summary\n\n"
+                message += self.get_message(user_id, 'total_items').format(count=len(items)) + "\n\n"
+                
+                for category, category_items in categories.items():
+                    message += f"{category} {self.get_message(user_id, 'items_count_inline').format(count=len(category_items))}:\n"
+                    for item in category_items:
+                        message += f"• {item['name']}"
+                        if item['notes']:
+                            message += f" ({item['notes']})"
+                        
+                        # Add delete command for admins
+                        if self.db.is_user_admin(user_id):
+                            message += f"\n  🗑️ /delete_{item['id']}"
+                        
+                        message += "\n"
                     message += "\n"
-                message += "\n"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -10962,19 +10962,19 @@ class ShoppingBot:
                     keyboard = [
                         [
                             InlineKeyboardButton(
-                                "🔄 Reset Whole List" if admin_lang != 'he' else "🔄 אפס את כל הרשימה",
+                                self.get_message(admin['user_id'], 'maintenance_reset_whole_hebrew') if admin_lang == 'he' else "🔄 Reset Whole List",
                                 callback_data="maintenance_reset_whole"
                             )
                         ],
                         [
                             InlineKeyboardButton(
-                                "✅ Reset Bought Items Only" if admin_lang != 'he' else "✅ אפס רק פריטים שנקנו",
+                                self.get_message(admin['user_id'], 'maintenance_reset_bought_hebrew') if admin_lang == 'he' else "✅ Reset Bought Items Only",
                                 callback_data="maintenance_reset_bought"
                             )
                         ],
                         [
                             InlineKeyboardButton(
-                                "❌ Not Yet" if admin_lang != 'he' else "❌ עדיין לא",
+                                self.get_message(admin['user_id'], 'maintenance_not_yet_hebrew') if admin_lang == 'he' else "❌ Not Yet",
                                 callback_data="maintenance_reset_decline"
                             )
                         ]
