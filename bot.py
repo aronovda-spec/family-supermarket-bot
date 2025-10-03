@@ -1166,19 +1166,19 @@ class ShoppingBot:
             await self.supermarket_list_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_new_list') or 
-              text == "➕ New List" or text == "➕ רשימה חדשה"):
+              text == "➕ New List" or text == self.get_message(user_id, 'btn_new_list_hebrew')):
             await self.new_list_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_suggest_category') or 
-              text == "💡 Suggest Category" or text == "💡 הצע קטגוריה"):
+              text == "💡 Suggest Category" or text == self.get_message(user_id, 'btn_suggest_category_hebrew')):
             await self.suggest_category_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_my_lists') or 
-              text == "📋 My Lists" or text == "📋 הרשימות שלי"):
+              text == "📋 My Lists" or text == self.get_message(user_id, 'btn_my_lists_hebrew')):
             await self.my_lists_command(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_custom_shared_list') or 
-              text == "🤝 Custom Shared" or text == "🤝 רשימה משותפת"):
+              text == "🤝 Custom Shared" or text == self.get_message(user_id, 'btn_custom_shared_list_hebrew')):
             await self.show_custom_shared_lists(update, context)
             return
         elif (text == self.get_message(user_id, 'btn_manage_lists') or 
@@ -6775,16 +6775,16 @@ class ShoppingBot:
         
         if not lists:
             if user_lang == 'he':
-                message = "❌ לא נמצאו רשימות."
-                back_to_management_text = "🔙 חזור לניהול"
+                message = self.get_message(user_id, 'no_lists_found_template_hebrew')
+                back_to_management_text = self.get_message(user_id, 'back_to_management_template_hebrew')
             else:
                 message = "❌ No lists found."
                 back_to_management_text = self.get_message(user_id, 'btn_back_to_management')
             keyboard = [[InlineKeyboardButton(back_to_management_text, callback_data="admin_management")]]
         else:
             if user_lang == 'he':
-                message = "📋 **ניהול תבניות**\n\nבחר רשימה לניהול תבניות:"
-                manage_system_templates_text = "🏛️ נהל תבניות מערכת"
+                message = self.get_message(user_id, 'template_management_global_hebrew') + "\n\n" + self.get_message(user_id, 'template_management_message_hebrew')
+                manage_system_templates_text = self.get_message(user_id, 'manage_system_templates_hebrew')
             else:
                 message = "📋 **Template Management**\n\nSelect a list to manage templates:"
                 manage_system_templates_text = "🏛️ Manage System Templates"
@@ -8978,7 +8978,7 @@ class ShoppingBot:
             template_items = template['items']
         
         if user_lang == 'he':
-            message = f"📋 תצוגה מקדימה של תבנית {template_name}\n\n"
+            message = self.get_message(user_id, 'template_preview_title_hebrew').format(template_name=template_name) + "\n\n"
         else:
             message = f"📋 {template_name} Template Preview\n\n"
         if template_description:
@@ -8998,11 +8998,11 @@ class ShoppingBot:
         
         # Get localized button text
         if user_lang == 'he':
-            choose_text = "💡 בחר איך להשתמש בתבנית זו:"
-            add_all_text = "✅ הוסף את כל הפריטים"
-            select_items_text = "🎯 בחר פריטים"
-            replace_list_text = "🔄 החלף רשימה"
-            back_to_templates_text = "🔙 חזור לתבניות"
+            choose_text = self.get_message(user_id, 'choose_template_usage_hebrew')
+            add_all_text = self.get_message(user_id, 'add_all_items_button_hebrew')
+            select_items_text = self.get_message(user_id, 'select_items_button_hebrew')
+            replace_list_text = self.get_message(user_id, 'replace_list_button_hebrew')
+            back_to_templates_text = self.get_message(user_id, 'back_to_templates_button_hebrew')
         else:
             choose_text = "💡 Choose how to use this template:"
             add_all_text = "✅ Add All Items"
@@ -9326,8 +9326,8 @@ class ShoppingBot:
         # User template management
         if user_templates_for_type:
             if user_lang == 'he':
-                keyboard.append([InlineKeyboardButton("📊 סטטיסטיקות התבניות שלי", callback_data=f"template_stats_{list_id}")])
-                keyboard.append([InlineKeyboardButton("⚙️ נהל את התבניות שלי", callback_data=f"manage_my_templates_{list_id}")])
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'my_template_stats_hebrew'), callback_data=f"template_stats_{list_id}")])
+                keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'manage_my_templates_button_hebrew'), callback_data=f"manage_my_templates_{list_id}")])
             else:
                 keyboard.append([InlineKeyboardButton("📊 My Template Statistics", callback_data=f"template_stats_{list_id}")])
                 keyboard.append([InlineKeyboardButton("⚙️ Manage My Templates", callback_data=f"manage_my_templates_{list_id}")])
@@ -9419,9 +9419,9 @@ class ShoppingBot:
         
         if user_lang == 'he':
             keyboard.extend([
-                [InlineKeyboardButton("➕ צור מהרשימה הנוכחית", callback_data=f"create_system_template_{list_id}")],
-                [InlineKeyboardButton("➕ צור תבנית ריקה", callback_data=f"create_empty_system_template_{list_id}")],
-                [InlineKeyboardButton("🔙 חזור לניהול תבניות", callback_data=f"template_management_{list_id}")]
+                [InlineKeyboardButton(self.get_message(user_id, 'create_from_current_list_button_hebrew'), callback_data=f"create_system_template_{list_id}")],
+                [InlineKeyboardButton(self.get_message(user_id, 'create_empty_template_button_hebrew'), callback_data=f"create_empty_system_template_{list_id}")],
+                [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_hebrew'), callback_data=f"template_management_{list_id}")]
             ])
         else:
             keyboard.extend([
@@ -9499,9 +9499,9 @@ class ShoppingBot:
         # Add creation options
         if user_lang == 'he':
             keyboard.extend([
-                [InlineKeyboardButton("➕ צור מרשימה", callback_data="create_system_template_global")],
-                [InlineKeyboardButton("➕ צור תבנית ריקה", callback_data="create_empty_system_template_global")],
-                [InlineKeyboardButton("🔙 חזור לניהול תבניות", callback_data="template_management_menu")]
+                [InlineKeyboardButton(self.get_message(user_id, 'create_from_list_global_hebrew'), callback_data="create_system_template_global")],
+                [InlineKeyboardButton(self.get_message(user_id, 'create_empty_template_button_hebrew'), callback_data="create_empty_system_template_global")],
+                [InlineKeyboardButton(self.get_message(user_id, 'back_to_template_management_menu_hebrew'), callback_data="template_management_menu")]
             ])
         else:
             keyboard.extend([
@@ -10631,8 +10631,8 @@ class ShoppingBot:
         user_lang = self.get_user_language(user_id)
         if user_lang == 'he':
             keyboard.append([
-                InlineKeyboardButton("➕ צור מהרשימה הנוכחית", callback_data=f"create_user_template_from_list_{list_id}"),
-                InlineKeyboardButton("➕ צור תבנית ריקה", callback_data=f"create_user_template_from_scratch_{list_id}")
+                InlineKeyboardButton(self.get_message(user_id, 'create_from_current_list_button_hebrew'), callback_data=f"create_user_template_from_list_{list_id}"),
+                InlineKeyboardButton(self.get_message(user_id, 'create_empty_template_button_hebrew'), callback_data=f"create_user_template_from_scratch_{list_id}")
             ])
         else:
             keyboard.append([
