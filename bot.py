@@ -2760,6 +2760,12 @@ class ShoppingBot:
         elif data == "maintenance_reset_confirm":
             await self.confirm_maintenance_reset(update, context)
         
+        elif data == "maintenance_reset_whole":
+            await self.confirm_maintenance_reset_whole(update, context)
+        
+        elif data == "maintenance_reset_bought":
+            await self.confirm_maintenance_reset_bought(update, context)
+        
         elif data == "maintenance_reset_decline":
             await self.decline_maintenance_reset(update, context)
         
@@ -3391,6 +3397,32 @@ class ShoppingBot:
                     await context.bot.send_message(
                         chat_id=db_user['user_id'],
                         text=message,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify user {db_user['user_id']}: {e}")
+
+    async def notify_users_bought_items_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE, reset_count: int):
+        """Notify all users when bought items are reset"""
+        user = update.effective_user
+        user_name = user.first_name or user.username or self.get_message(update.effective_user.id, 'admin_fallback')
+        
+        message = f"🔄 **Bought items reset by {user_name}**\n\n✅ {reset_count} bought items have been reset to 'pending' status.\n\n📋 You can now mark them as bought or not found again!"
+        
+        # Get all users except the admin who reset
+        all_users = self.db.get_all_users()
+        for db_user in all_users:
+            if db_user['user_id'] != user.id and db_user['is_authorized']:
+                try:
+                    # Use localized message for each user
+                    localized_message = self.get_message(db_user['user_id'], 'bought_items_reset_notification').format(
+                        reset_by=user_name,
+                        count=reset_count
+                    ) if self.get_message(db_user['user_id'], 'bought_items_reset_notification') else message
+                    
+                    await context.bot.send_message(
+                        chat_id=db_user['user_id'],
+                        text=localized_message,
                         parse_mode='Markdown'
                     )
                 except Exception as e:
@@ -6306,8 +6338,8 @@ class ShoppingBot:
         # Option 3: Reset Whole List (always available)
         keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_reset_whole_list'), callback_data=f"reset_whole_list_{list_id}")])
         
-        # Option 4: Cancel
-        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_cancel_reset'), callback_data=f"list_actions_{list_id}")])
+        # Option 4: Back to List
+        keyboard.append([InlineKeyboardButton(self.get_message(user_id, 'btn_back_to_list'), callback_data=f"list_menu_{list_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -7449,6 +7481,77 @@ class ShoppingBot:
             await self.notify_users_list_reset(update, context, self.get_message(update.effective_user.id, 'supermarket_list'))
         else:
             message = "❌ Error resetting list."
+        
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def confirm_maintenance_reset_whole(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm maintenance reset - whole list"""
+        user_id = update.effective_user.id
+        
+        # Reset the supermarket list (whole list)
+        if self.db.reset_list(1):  # Supermarket list
+            message = f"✅ **Complete List Reset Performed**\n\n🛒 **{self.get_message(user_id, 'supermarket_list')}** has been completely reset.\n\n📋 All items have been removed from the list."
+            # Update maintenance reminder
+            maintenance = self.db.get_maintenance_mode(1)
+            if maintenance:
+                self.db.update_maintenance_reminder(maintenance['id'])
+            # Notify all users
+            await self.notify_users_list_reset(update, context, self.get_message(update.effective_user.id, 'supermarket_list'))
+        else:
+            message = "❌ Error resetting whole list."
+        
+        keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    async def confirm_maintenance_reset_bought(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm maintenance reset - bought items only"""
+        user_id = update.effective_user.id
+        
+        # Reset bought items in the supermarket list
+        try:
+            # Check if list is frozen first
+            if not self.db.is_list_frozen(1):  # Supermarket list
+                await update.callback_query.edit_message_text("❌ This list is not frozen. Cannot reset bought items.")
+                return
+            
+            # Count bought items
+            items = self.db.get_shopping_list_by_id(1)
+            bought_count = 0
+            reset_count = 0
+            
+            for item in items:
+                status = self.db.get_item_status(item['id'], user_id)
+                if status == 'bought':
+                    bought_count += 1
+                    # Reset the item status to pending
+                    if self.db.mark_item_status(item['id'], 'pending', user_id):
+                        reset_count += 1
+            
+            if bought_count > 0:
+                message = f"✅ **Bought Items Reset Complete**\n\n🛒 **{self.get_message(user_id, 'supermarket_list')}** bought items reset.\n\n📊 Reset: {reset_count}/{bought_count} bought items\n🔄 Items are now back to 'pending' status"
+                
+                # Update maintenance reminder
+                maintenance = self.db.get_maintenance_mode(1)
+                if maintenance:
+                    self.db.update_maintenance_reminder(maintenance['id'])
+                    
+                # Notify users about bought items reset
+                await self.notify_users_bought_items_reset(update, context, reset_count)
+            else:
+                message = f"📋 **No Bought Items Found**\n\n🛒 **{self.get_message(user_id, 'supermarket_list')}** - No bought items to reset.\n\n✅ All items are still pending."
+                
+                # Update maintenance reminder anyway
+                maintenance = self.db.get_maintenance_mode(1)
+                if maintenance:
+                    self.db.update_maintenance_reminder(maintenance['id'])
+                    
+        except Exception as e:
+            message = f"❌ Error resetting bought items: {e}"
         
         keyboard = [[InlineKeyboardButton(self.get_message(user_id, 'btn_back_menu'), callback_data="maintenance_mode")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -10844,8 +10947,14 @@ class ShoppingBot:
                     keyboard = [
                         [
                             InlineKeyboardButton(
-                                "✅ Reset List Now" if admin_lang != 'he' else "✅ אפס רשימה עכשיו",
-                                callback_data="maintenance_reset_confirm"
+                                "🔄 Reset Whole List" if admin_lang != 'he' else "🔄 אפס את כל הרשימה",
+                                callback_data="maintenance_reset_whole"
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "✅ Reset Bought Items Only" if admin_lang != 'he' else "✅ אפס רק פריטים שנקנו",
+                                callback_data="maintenance_reset_bought"
                             )
                         ],
                         [
