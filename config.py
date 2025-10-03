@@ -192,6 +192,38 @@ CATEGORIES = {
             'en': ['Gift cards', 'Wrapping paper', 'Greeting cards', 'Balloons', 'Party supplies', 'Candles', 'Decorative items', 'Toys'],
             'he': ['כרטיסי מתנה', 'נייר עטיפה', 'כרטיסי ברכה', 'בלונים', 'אספקת מסיבות', 'נרות', 'פריטי קישוט', 'צעצועים']
         }
+    },
+    'fruits': {
+        'emoji': '🍎',
+        'name': {'en': 'Fruits', 'he': 'פירות'},
+        'items': {
+            'en': ['Apples', 'Bananas', 'Oranges', 'Grapes', 'Strawberries', 'Blueberries', 'Peaches', 'Pears', 'Lemons', 'Avocado'],
+            'he': ['תפוחים', 'בננות', 'תפוזים', 'ענבים', 'תותים', 'אוכמניות', 'אפרסקים', 'אגסים', 'לימונים', 'אבוקדו']
+        }
+    },
+    'vegetables': {
+        'emoji': '🥕',
+        'name': {'en': 'Vegetables', 'he': 'ירקות'},
+        'items': {
+            'en': ['Carrots', 'Broccoli', 'Tomatoes', 'Onions', 'Potatoes', 'Lettuce', 'Cucumber', 'Bell peppers', 'Mushrooms', 'Spinach'],
+            'he': ['גזר', 'ברוקולי', 'עגבניות', 'בצל', 'תפוחי אדמה', 'חסה', 'מלפפון', 'פלפלים', 'פטריות', 'תרד']
+        }
+    },
+    'meat': {
+        'emoji': '🍗',
+        'name': {'en': 'Meat', 'he': 'בשר'},
+        'items': {
+            'en': ['Chicken', 'Beef', 'Pork', 'Ground meat', 'Turkey', 'Lamb', 'Bacon', 'Sausages', 'Ham'],
+            'he': ['עוף', 'בקר', 'חזיר', 'בשר טחון', 'הודו', 'כבש', 'בייקון', 'נקניקיות', 'נקניק']
+        }
+    },
+    'grains': {
+        'emoji': '🌾',
+        'name': {'en': 'Grains', 'he': 'דגנים'},
+        'items': {
+            'en': ['Rice', 'Pasta', 'Bread', 'Cereal', 'Oats', 'Quinoa', 'Flour', 'Barley'],
+            'he': ['אורז', 'פסטה', 'לחם', 'דגנים', 'שיבולת שועל', 'קינואה', 'קמח', 'שעורה']
+        }
     }
 }
 

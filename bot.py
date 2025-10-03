@@ -440,6 +440,274 @@ class ShoppingBot:
         
         return translated_items
 
+    def translate_item_name(self, item_name: str, user_id: int) -> str:
+        """Translate individual item name to Hebrew if user language is Hebrew"""
+        user_lang = self.get_user_language(user_id)
+        if user_lang != 'he':
+            return item_name
+        
+        # Use the same translation dictionary as templates
+        translations = {
+            'Milk': 'חלב',
+            'Bread': 'לחם',
+            'Eggs': 'ביצים',
+            'Cheese': 'גבינה',
+            'Yogurt': 'יוגורט',
+            'Apples': 'תפוחים',
+            'Bananas': 'בננות',
+            'Carrots': 'גזר',
+            'Onions': 'בצל',
+            'Potatoes': 'תפוחי אדמה',
+            'Chicken': 'עוף',
+            'Ground meat': 'בשר טחון',
+            'Rice': 'אורז',
+            'Pasta': 'פסטה',
+            'Cereal': 'דגנים',
+            'Coffee': 'קפה',
+            'Tea': 'תה',
+            'Oats': 'שיבולת שועל',
+            'Butter': 'חמאה',
+            'Jam': 'ריבה',
+            'Orange juice': 'מיץ תפוזים',
+            'Fruits': 'פירות',
+            'Wine': 'יין',
+            'Olives': 'זיתים',
+            'Salmon': 'סלמון',
+            'Beef': 'בקר',
+            'Vegetables': 'ירקות',
+            'Herbs': 'עשבי תיבול',
+            'Olive oil': 'שמן זית',
+            'Vinegar': 'חומץ',
+            'Dessert': 'קינוח',
+            'Pork': 'חזיר',
+            'Sausages': 'נקניקיות',
+            'Bacon': 'בייקון',
+            'Ketchup': 'קטשופ',
+            'Mustard': 'חרדל',
+            'BBQ sauce': 'רוטב על האש',
+            'Charcoal': 'פחם',
+            'Beer': 'בירה',
+            'Soda': 'משקה מוגז',
+            'Ham': 'נקניק',
+            'Juice boxes': 'קופסאות מיץ',
+            'Crackers': 'קרקרים',
+            'Cookies': 'עוגיות',
+            'Nuts': 'אגוזים',
+            'Granola bars': 'חטיפי גרנולה',
+            'Tofu': 'טופו',
+            'Tomatoes': 'עגבניות',
+            'Cucumber': 'מלפפון',
+            'Lettuce': 'חסה',
+            'Spinach': 'תרד',
+            'Broccoli': 'ברוקולי',
+            'Cauliflower': 'כרובית',
+            'Peppers': 'פלפלים',
+            'Mushrooms': 'פטריות',
+            'Garlic': 'שום',
+            'Ginger': 'זנגביל',
+            'Lemons': 'לימונים',
+            'Oranges': 'תפוזים',
+            'Grapes': 'ענבים',
+            'Strawberries': 'תותים',
+            'Blueberries': 'אוכמניות',
+            'Peaches': 'אפרסקים',
+            'Pears': 'אגסים',
+            'Avocado': 'אבוקדו',
+            'Coconut': 'קוקוס',
+            'Almonds': 'שקדים',
+            'Walnuts': 'אגוזי מלך',
+            'Peanuts': 'בוטנים',
+            'Honey': 'דבש',
+            'Sugar': 'סוכר',
+            'Salt': 'מלח',
+            'Pepper': 'פלפל',
+            'Cinnamon': 'קינמון',
+            'Vanilla': 'וניל',
+            'Chocolate': 'שוקולד',
+            'Ice cream': 'גלידה',
+            'Cake': 'עוגה',
+            'Cookies': 'עוגיות',
+            'Candy': 'ממתקים',
+            'Gum': 'מסטיק',
+            'Water': 'מים',
+            'Juice': 'מיץ',
+            'Milk': 'חלב',
+            'Cream': 'שמנת',
+            'Sour cream': 'שמנת חמוצה',
+            'Mayonnaise': 'מיונז',
+            'Mustard': 'חרדל',
+            'Ketchup': 'קטשופ',
+            'Soy sauce': 'רוטב סויה',
+            'Worcestershire sauce': 'רוטב ווסטרשייר',
+            'Hot sauce': 'רוטב חריף',
+            'Barbecue sauce': 'רוטב ברביקיו',
+            'Ranch dressing': 'רוטב ראנץ',
+            'Italian dressing': 'רוטב איטלקי',
+            'Caesar dressing': 'רוטב קיסר',
+            'Balsamic vinegar': 'חומץ בלסמי',
+            'Red wine vinegar': 'חומץ יין אדום',
+            'White wine vinegar': 'חומץ יין לבן',
+            'Apple cider vinegar': 'חומץ תפוחים',
+            'Rice vinegar': 'חומץ אורז',
+            'Distilled vinegar': 'חומץ מזוקק',
+            'White vinegar': 'חומץ לבן',
+            'Malt vinegar': 'חומץ לתת',
+            'Sherry vinegar': 'חומץ שרי',
+            'Champagne vinegar': 'חומץ שמפניה',
+            'Coconut vinegar': 'חומץ קוקוס',
+            'Date vinegar': 'חומץ תמרים',
+            'Palm vinegar': 'חומץ דקלים',
+            'Cane vinegar': 'חומץ קנה סוכר',
+            'Beer vinegar': 'חומץ בירה',
+            'Wine vinegar': 'חומץ יין',
+            'Spirit vinegar': 'חומץ אלכוהול',
+            'Distilled spirit vinegar': 'חומץ אלכוהול מזוקק',
+            'Non-brewed condiment': 'תבלין לא מבושל',
+            'Synthetic vinegar': 'חומץ סינתטי',
+            'Artificial vinegar': 'חומץ מלאכותי',
+            'Imitation vinegar': 'חומץ חיקוי',
+            'Substitute vinegar': 'חומץ תחליף',
+            'Alternative vinegar': 'חומץ חלופי',
+            'Replacement vinegar': 'חומץ תחליף',
+            'Stand-in vinegar': 'חומץ מחליף',
+            'Proxy vinegar': 'חומץ פרוקסי',
+            'Surrogate vinegar': 'חומץ סורוגט',
+            'Deputy vinegar': 'חומץ סגן',
+            'Acting vinegar': 'חומץ ממלא מקום',
+            'Interim vinegar': 'חומץ זמני',
+            'Temporary vinegar': 'חומץ זמני',
+            'Provisional vinegar': 'חומץ זמני',
+            'Interim vinegar': 'חומץ זמני',
+            'Acting vinegar': 'חומץ ממלא מקום',
+            'Deputy vinegar': 'חומץ סגן',
+            'Surrogate vinegar': 'חומץ סורוגט',
+            'Proxy vinegar': 'חומץ פרוקסי',
+            'Stand-in vinegar': 'חומץ מחליף',
+            'Replacement vinegar': 'חומץ תחליף',
+            'Alternative vinegar': 'חומץ חלופי',
+            'Substitute vinegar': 'חומץ תחליף',
+            'Imitation vinegar': 'חומץ חיקוי',
+            'Artificial vinegar': 'חומץ מלאכותי',
+            'Synthetic vinegar': 'חומץ סינתטי',
+            'Non-brewed condiment': 'תבלין לא מבושל',
+            'Distilled spirit vinegar': 'חומץ אלכוהול מזוקק',
+            'Spirit vinegar': 'חומץ אלכוהול',
+            'Wine vinegar': 'חומץ יין',
+            'Beer vinegar': 'חומץ בירה',
+            'Cane vinegar': 'חומץ קנה סוכר',
+            'Palm vinegar': 'חומץ דקלים',
+            'Date vinegar': 'חומץ תמרים',
+            'Coconut vinegar': 'חומץ קוקוס',
+            'Champagne vinegar': 'חומץ שמפניה',
+            'Sherry vinegar': 'חומץ שרי',
+            'Malt vinegar': 'חומץ לתת',
+            'White vinegar': 'חומץ לבן',
+            'Distilled vinegar': 'חומץ מזוקק',
+            'Rice vinegar': 'חומץ אורז',
+            'Apple cider vinegar': 'חומץ תפוחים',
+            'White wine vinegar': 'חומץ יין לבן',
+            'Red wine vinegar': 'חומץ יין אדום',
+            'Balsamic vinegar': 'חומץ בלסמי',
+            'Caesar dressing': 'רוטב קיסר',
+            'Italian dressing': 'רוטב איטלקי',
+            'Ranch dressing': 'רוטב ראנץ',
+            'Barbecue sauce': 'רוטב ברביקיו',
+            'Hot sauce': 'רוטב חריף',
+            'Worcestershire sauce': 'רוטב ווסטרשייר',
+            'Soy sauce': 'רוטב סויה',
+            'Ketchup': 'קטשופ',
+            'Mustard': 'חרדל',
+            'Mayonnaise': 'מיונז',
+            'Sour cream': 'שמנת חמוצה',
+            'Cream': 'שמנת',
+            'Milk': 'חלב',
+            'Juice': 'מיץ',
+            'Water': 'מים',
+            'Gum': 'מסטיק',
+            'Candy': 'ממתקים',
+            'Cookies': 'עוגיות',
+            'Cake': 'עוגה',
+            'Ice cream': 'גלידה',
+            'Chocolate': 'שוקולד',
+            'Vanilla': 'וניל',
+            'Cinnamon': 'קינמון',
+            'Pepper': 'פלפל',
+            'Salt': 'מלח',
+            'Sugar': 'סוכר',
+            'Honey': 'דבש',
+            'Peanuts': 'בוטנים',
+            'Walnuts': 'אגוזי מלך',
+            'Almonds': 'שקדים',
+            'Coconut': 'קוקוס',
+            'Avocado': 'אבוקדו',
+            'Pears': 'אגסים',
+            'Peaches': 'אפרסקים',
+            'Blueberries': 'אוכמניות',
+            'Strawberries': 'תותים',
+            'Grapes': 'ענבים',
+            'Oranges': 'תפוזים',
+            'Lemons': 'לימונים',
+            'Ginger': 'זנגביל',
+            'Garlic': 'שום',
+            'Mushrooms': 'פטריות',
+            'Peppers': 'פלפלים',
+            'Cauliflower': 'כרובית',
+            'Broccoli': 'ברוקולי',
+            'Spinach': 'תרד',
+            'Lettuce': 'חסה',
+            'Cucumber': 'מלפפון',
+            'Tomatoes': 'עגבניות',
+            'Tofu': 'טופו',
+            'Granola bars': 'חטיפי גרנולה',
+            'Nuts': 'אגוזים',
+            'Cookies': 'עוגיות',
+            'Crackers': 'קרקרים',
+            'Juice boxes': 'קופסאות מיץ',
+            'Ham': 'נקניק',
+            'Soda': 'משקה מוגז',
+            'Beer': 'בירה',
+            'Charcoal': 'פחם',
+            'BBQ sauce': 'רוטב על האש',
+            'Mustard': 'חרדל',
+            'Ketchup': 'קטשופ',
+            'Bacon': 'בייקון',
+            'Sausages': 'נקניקיות',
+            'Pork': 'חזיר',
+            'Dessert': 'קינוח',
+            'Vinegar': 'חומץ',
+            'Olive oil': 'שמן זית',
+            'Herbs': 'עשבי תיבול',
+            'Vegetables': 'ירקות',
+            'Beef': 'בקר',
+            'Salmon': 'סלמון',
+            'Olives': 'זיתים',
+            'Wine': 'יין',
+            'Fruits': 'פירות',
+            'Orange juice': 'מיץ תפוזים',
+            'Jam': 'ריבה',
+            'Butter': 'חמאה',
+            'Oats': 'שיבולת שועל',
+            'Tea': 'תה',
+            'Coffee': 'קפה',
+            'Cereal': 'דגנים',
+            'Pasta': 'פסטה',
+            'Rice': 'אורז',
+            'Ground meat': 'בשר טחון',
+            'Chicken': 'עוף',
+            'Potatoes': 'תפוחי אדמה',
+            'Onions': 'בצל',
+            'Carrots': 'גזר',
+            'Bananas': 'בננות',
+            'Apples': 'תפוחים',
+            'Yogurt': 'יוגורט',
+            'Cheese': 'גבינה',
+            'Eggs': 'ביצים',
+            'Bread': 'לחם',
+            'Milk': 'חלב'
+        }
+        
+        return translations.get(item_name, item_name)
+
     def get_category_name(self, user_id: int, category_key: str) -> str:
         """Get localized category name"""
         lang = self.get_user_language(user_id)
@@ -1564,7 +1832,8 @@ class ShoppingBot:
             message_parts.append(f"\n{category_emoji} {category_display_name}:")
             
             for item in category_items:
-                item_text = f"• {item['name']}"
+                translated_name = self.translate_item_name(item['name'], user_id)
+                item_text = f"• {translated_name}"
                 
                 # Add notes
                 all_notes = []
@@ -1655,7 +1924,8 @@ class ShoppingBot:
             summary_parts.append(f"\n{category_emoji} {category_display_name.upper()} ({len(category_items)} items)")
             
             for i, item in enumerate(category_items, 1):
-                item_line = f"{i:2d}. {item['name']}"
+                translated_name = self.translate_item_name(item['name'], user_id)
+                item_line = f"{i:2d}. {translated_name}"
                 
                 # Add consolidated notes
                 all_notes = []
@@ -1756,7 +2026,8 @@ class ShoppingBot:
             message_parts.append(f"\n{category_emoji} {category_display_name}:")
             
             for item in category_items:
-                item_text = f"• {item['name']}"
+                translated_name = self.translate_item_name(item['name'], user_id)
+                item_text = f"• {translated_name}"
                 
                 # Add notes
                 all_notes = []
@@ -5623,7 +5894,8 @@ class ShoppingBot:
                         category_name = self.get_category_name(user_id, current_category) if current_category else 'Custom'
                         message += f"\n{category_name}:\n"
                     
-                    message += f"• {item['name']}"
+                    translated_name = self.translate_item_name(item['name'], user_id)
+                    message += f"• {translated_name}"
                     if item['notes']:
                         message += f" ({item['notes']})"
                     if item['item_notes']:
@@ -6489,7 +6761,8 @@ class ShoppingBot:
                     category_name = self.get_category_name(user_id, current_category) if current_category else 'Custom'
                     items_text += f"\n{category_name}:\n"
                 
-                items_text += f"• {item['name']}"
+                translated_name = self.translate_item_name(item['name'], user_id)
+                items_text += f"• {translated_name}"
                 if item['notes']:
                     items_text += f" ({item['notes']})"
                 if item['item_notes']:
