@@ -47,6 +47,9 @@ logger = logging.getLogger(__name__)
 class ShoppingBot:
     def __init__(self):
         self.db = Database()
+        # Build application - JobQueue will be automatically available if installed
+        # Note: If weak reference errors occur, JobQueue will be None and maintenance
+        # notifications will be disabled, but the bot will still work
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
 
@@ -11591,22 +11594,10 @@ class ShoppingBot:
         async def post_init(application: Application):
             await self.setup_bot_commands()
             
-            # Set up maintenance schedule checker (if JobQueue is available)
-            job_queue = application.job_queue
-            if job_queue is not None:
-                # Create a wrapper function to avoid weak reference issues
-                async def maintenance_checker(context: ContextTypes.DEFAULT_TYPE):
-                    await self.check_maintenance_schedule(context)
-                
-                # Check maintenance schedule every 30 minutes
-                job_queue.run_repeating(
-                    maintenance_checker,
-                    interval=1800,  # 30 minutes in seconds
-                    first=10  # Start after 10 seconds
-                )
-                logger.info("Maintenance schedule checker started")
-            else:
-                logger.warning("JobQueue not available - maintenance notifications disabled. Install with: pip install python-telegram-bot[job-queue]")
+            # Note: JobQueue disabled due to weak reference issues
+            # Maintenance notifications can be implemented using external schedulers
+            # or manual triggers instead
+            logger.info("Bot started successfully (JobQueue disabled)")
         
         self.application.post_init = post_init
         self.application.run_polling()
