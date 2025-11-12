@@ -11588,15 +11588,19 @@ class ShoppingBot:
         logger.info("Starting Shopping Bot...")
         
         # Set up bot commands menu
-        async def post_init(application):
+        async def post_init(application: Application):
             await self.setup_bot_commands()
             
             # Set up maintenance schedule checker (if JobQueue is available)
             job_queue = application.job_queue
             if job_queue is not None:
+                # Create a wrapper function to avoid weak reference issues
+                async def maintenance_checker(context: ContextTypes.DEFAULT_TYPE):
+                    await self.check_maintenance_schedule(context)
+                
                 # Check maintenance schedule every 30 minutes
                 job_queue.run_repeating(
-                    self.check_maintenance_schedule,
+                    maintenance_checker,
                     interval=1800,  # 30 minutes in seconds
                     first=10  # Start after 10 seconds
                 )
