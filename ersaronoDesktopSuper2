@@ -1,0 +1,5 @@
+[33m93a711f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m FIX: All syntax errors resolved - Fixed 30+ indentation errors in bot.py and added missing all_suggestions_reviewed translations
+[33mcfd0a25[m FIX: Complete Hebrew translations for item management, categories, templates, and lists management - All hard-coded English text replaced with localized messages
+[33mec77815[m FIX: UnboundLocalError in show_manage_items_admin - added missing user_lang variable definition
+[33m85dae72[m FIX: Unfreeze List Back button navigation + Speech recognition Hebrew translation
+[33m43d97e1[m FIX: Unfreeze List Back button navigation - now goes to main list menu instead of management menu

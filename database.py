@@ -2,21 +2,134 @@ import sqlite3
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
-from config import DATABASE_PATH
+from contextlib import contextmanager
+from config import DATABASE_PATH, DATABASE_URL
+
+# Try to import psycopg2 for PostgreSQL support
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    logging.warning("psycopg2 not available. PostgreSQL support disabled. Install with: pip install psycopg2-binary")
 
 class Database:
     def __init__(self):
         self.db_path = DATABASE_PATH
+        self.db_url = DATABASE_URL
+        self.use_postgres = bool(self.db_url) and PSYCOPG2_AVAILABLE
+        if self.use_postgres:
+            logging.info("Using PostgreSQL database (Neon)")
+        else:
+            logging.info(f"Using SQLite database: {self.db_path}")
         self.init_database()
+    
+    @contextmanager
+    def _get_connection(self):
+        """Get database connection (PostgreSQL or SQLite)"""
+        if self.use_postgres:
+            conn = psycopg2.connect(self.db_url)
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                yield conn
+    
+    def _convert_sql(self, sql: str) -> str:
+        """Convert SQL syntax from SQLite to PostgreSQL"""
+        if not self.use_postgres:
+            return sql
+        
+        # Convert AUTOINCREMENT to SERIAL
+        sql = sql.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+        sql = sql.replace('AUTOINCREMENT', 'SERIAL')
+        
+        # Convert placeholders
+        sql = sql.replace('?', '%s')
+        
+        # Convert INSERT OR REPLACE to ON CONFLICT
+        if 'INSERT OR REPLACE INTO' in sql.upper():
+            # Extract table name and columns
+            import re
+            match = re.search(r'INSERT OR REPLACE INTO\s+(\w+)\s*\((.*?)\)\s*VALUES', sql, re.IGNORECASE)
+            if match:
+                table = match.group(1)
+                columns = match.group(2)
+                # Find PRIMARY KEY column
+                pk_col = None
+                if 'user_id' in columns:
+                    pk_col = 'user_id'
+                elif 'id' in columns:
+                    pk_col = 'id'
+                
+                if pk_col:
+                    sql = sql.replace('INSERT OR REPLACE INTO', 'INSERT INTO')
+                    # Add ON CONFLICT clause
+                    sql = sql.replace('VALUES', f'VALUES')
+                    # Extract the VALUES part and add ON CONFLICT
+                    values_match = re.search(r'VALUES\s*\((.*?)\)', sql, re.IGNORECASE | re.DOTALL)
+                    if values_match:
+                        values = values_match.group(1)
+                        # Build UPDATE clause
+                        col_list = [col.strip() for col in columns.split(',')]
+                        update_parts = [f"{col} = EXCLUDED.{col}" for col in col_list]
+                        update_clause = ', '.join(update_parts)
+                        sql = sql.replace(
+                            f'VALUES ({values})',
+                            f'VALUES ({values}) ON CONFLICT ({pk_col}) DO UPDATE SET {update_clause}'
+                        )
+        
+        # Convert string literals (SQLite uses double quotes, PostgreSQL prefers single)
+        # But keep them as is for now since both support double quotes in some contexts
+        
+        # Convert boolean values in SQL
+        sql = sql.replace('TRUE', 'true').replace('FALSE', 'false')
+        sql = sql.replace('true', 'TRUE').replace('false', 'FALSE')  # PostgreSQL uses TRUE/FALSE
+        
+        return sql
+    
+    def _handle_exception(self, e: Exception, operation: str = "operation"):
+        """Handle database exceptions for both SQLite and PostgreSQL"""
+        if self.use_postgres:
+            if isinstance(e, psycopg2.OperationalError):
+                if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                    return True  # Column already exists, safe to ignore
+            elif isinstance(e, psycopg2.IntegrityError):
+                if "duplicate key" in str(e).lower():
+                    return True  # Duplicate key, safe to ignore
+        else:
+            if isinstance(e, sqlite3.OperationalError):
+                if "duplicate column name" in str(e).lower() or "already exists" in str(e).lower():
+                    return True  # Column already exists, safe to ignore
+        
+        logging.error(f"Error in {operation}: {e}")
+        return False
+    
+    def _execute(self, cursor, sql: str, params: tuple = None):
+        """Execute SQL query with automatic placeholder conversion"""
+        if self.use_postgres:
+            # Convert ? to %s for PostgreSQL
+            sql = sql.replace('?', '%s')
+        if params:
+            cursor.execute(sql, params)
+        else:
+            cursor.execute(sql)
 
     def init_database(self):
         """Initialize the database with required tables"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Users table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS users (
                         user_id INTEGER PRIMARY KEY,
                         username TEXT,
@@ -27,10 +140,11 @@ class Database:
                         language TEXT DEFAULT 'en',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Lists table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS lists (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
@@ -43,10 +157,11 @@ class Database:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (created_by) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Shopping items table (now with list_id)
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS shopping_items (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         list_id INTEGER DEFAULT 1,
@@ -58,10 +173,11 @@ class Database:
                         FOREIGN KEY (list_id) REFERENCES lists (id),
                         FOREIGN KEY (added_by) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Item notes table (for handling multiple notes from different users)
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS item_notes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         item_id INTEGER,
@@ -71,10 +187,11 @@ class Database:
                         FOREIGN KEY (item_id) REFERENCES shopping_items (id),
                         FOREIGN KEY (user_id) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Broadcast messages table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS broadcast_messages (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         sender_id INTEGER,
@@ -83,10 +200,11 @@ class Database:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (sender_id) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Item suggestions table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS item_suggestions (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         suggested_by INTEGER,
@@ -100,10 +218,11 @@ class Database:
                         FOREIGN KEY (suggested_by) REFERENCES users (user_id),
                         FOREIGN KEY (approved_by) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Maintenance mode table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS maintenance_mode (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         list_id INTEGER DEFAULT 1,
@@ -117,10 +236,11 @@ class Database:
                         FOREIGN KEY (list_id) REFERENCES lists (id),
                         FOREIGN KEY (created_by) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # List sharing table for custom shared lists
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS list_sharing (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         list_id INTEGER NOT NULL,
@@ -131,15 +251,18 @@ class Database:
                         FOREIGN KEY (user_id) REFERENCES users (user_id),
                         UNIQUE(list_id, user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Create default supermarket list if it doesn't exist
-                cursor.execute('SELECT COUNT(*) FROM lists WHERE list_type = "supermarket"')
+                placeholder = '%s' if self.use_postgres else '?'
+                cursor.execute(f'SELECT COUNT(*) FROM lists WHERE list_type = {placeholder}', ('supermarket',))
                 if cursor.fetchone()[0] == 0:
-                    cursor.execute('''
+                    sql = '''
                         INSERT INTO lists (id, name, description, list_type, created_by)
-                        VALUES (1, "Supermarket List", "Weekly family shopping list", "supermarket", 1)
-                    ''')
+                        VALUES (1, 'Supermarket List', 'Weekly family shopping list', 'supermarket', 1)
+                    '''
+                    cursor.execute(self._convert_sql(sql))
                 
                 # Ensure supermarket list always exists and is protected
                 self._ensure_supermarket_list_protection(cursor)
@@ -148,8 +271,8 @@ class Database:
                 try:
                     cursor.execute('ALTER TABLE shopping_items ADD COLUMN list_id INTEGER DEFAULT 1')
                     print("Added list_id column to shopping_items table")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
+                except Exception as e:
+                    if self._handle_exception(e, "adding list_id column"):
                         print("list_id column already exists in shopping_items table")
                     else:
                         print(f"Error adding list_id column: {e}")
@@ -158,8 +281,8 @@ class Database:
                 try:
                     cursor.execute('ALTER TABLE item_suggestions ADD COLUMN list_id INTEGER DEFAULT 1')
                     print("Added list_id column to item_suggestions table")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
+                except Exception as e:
+                    if self._handle_exception(e, "adding list_id column to item_suggestions"):
                         print("list_id column already exists in item_suggestions table")
                     else:
                         print(f"Error adding list_id column to item_suggestions: {e}")
@@ -169,14 +292,14 @@ class Database:
                     cursor.execute('ALTER TABLE lists ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE')
                     cursor.execute('ALTER TABLE lists ADD COLUMN frozen_at TIMESTAMP DEFAULT NULL')
                     print("Added frozen fields to lists table")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
+                except Exception as e:
+                    if self._handle_exception(e, "adding frozen columns"):
                         print("Frozen columns already exist in lists table")
                     else:
                         print(f"Error adding frozen columns to lists table: {e}")
                 
                 # Create item_status_tracking table for frozen mode functionality
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS item_status_tracking (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         item_id INTEGER NOT NULL,
@@ -187,14 +310,15 @@ class Database:
                         FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
                         UNIQUE(item_id, user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Migration: Add Hebrew columns to templates table
                 try:
                     cursor.execute('ALTER TABLE templates ADD COLUMN name_he TEXT')
                     print("Added name_he column to templates table")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
+                except Exception as e:
+                    if self._handle_exception(e, "adding name_he column"):
                         print("name_he column already exists in templates table")
                     else:
                         print(f"Error adding name_he column to templates: {e}")
@@ -202,8 +326,8 @@ class Database:
                 try:
                     cursor.execute('ALTER TABLE templates ADD COLUMN description_he TEXT')
                     print("Added description_he column to templates table")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
+                except Exception as e:
+                    if self._handle_exception(e, "adding description_he column"):
                         print("description_he column already exists in templates table")
                     else:
                         print(f"Error adding description_he column to templates: {e}")
@@ -211,14 +335,14 @@ class Database:
                 try:
                     cursor.execute('ALTER TABLE templates ADD COLUMN items_he TEXT')
                     print("Added items_he column to templates table")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
+                except Exception as e:
+                    if self._handle_exception(e, "adding items_he column"):
                         print("items_he column already exists in templates table")
                     else:
                         print(f"Error adding items_he column to templates: {e}")
                 
                 # Custom categories table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS custom_categories (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         category_key TEXT UNIQUE NOT NULL,
@@ -229,10 +353,11 @@ class Database:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (created_by) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Category suggestions table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS category_suggestions (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         suggested_by INTEGER NOT NULL,
@@ -247,10 +372,11 @@ class Database:
                         FOREIGN KEY (suggested_by) REFERENCES users (user_id),
                         FOREIGN KEY (approved_by) REFERENCES users (user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Deleted items table (items permanently removed from categories)
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS deleted_items (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         category_key TEXT NOT NULL,
@@ -259,10 +385,11 @@ class Database:
                         deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (deleted_by) REFERENCES users(user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Dynamic category items table (for approved suggestions)
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS dynamic_category_items (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         category_key TEXT NOT NULL,
@@ -272,10 +399,11 @@ class Database:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (added_by) REFERENCES users(user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Templates table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS templates (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
@@ -283,8 +411,8 @@ class Database:
                         description TEXT,
                         description_he TEXT,
                         list_type TEXT NOT NULL,
-                        items TEXT NOT NULL,  -- JSON array of items
-                        items_he TEXT,  -- JSON array of Hebrew items
+                        items TEXT NOT NULL,
+                        items_he TEXT,
                         created_by INTEGER NOT NULL,
                         is_system_template BOOLEAN DEFAULT FALSE,
                         usage_count INTEGER DEFAULT 0,
@@ -292,10 +420,11 @@ class Database:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (created_by) REFERENCES users(user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Template categories table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS template_categories (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
@@ -305,23 +434,26 @@ class Database:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (created_by) REFERENCES users(user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
                 # Template usage tracking table
-                cursor.execute('''
+                sql = '''
                     CREATE TABLE IF NOT EXISTS template_usage (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         template_id INTEGER NOT NULL,
                         user_id INTEGER NOT NULL,
-                        usage_type TEXT NOT NULL,  -- 'load', 'preview', 'customize'
+                        usage_type TEXT NOT NULL,
                         items_added INTEGER DEFAULT 0,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (template_id) REFERENCES templates(id),
                         FOREIGN KEY (user_id) REFERENCES users(user_id)
                     )
-                ''')
+                '''
+                cursor.execute(self._convert_sql(sql))
                 
-                conn.commit()
+                if not self.use_postgres:
+                    conn.commit()
                 
                 # Create default system templates
                 self.create_default_templates()
@@ -335,7 +467,7 @@ class Database:
         """Create default system templates if they don't exist"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if we already have system templates
@@ -493,11 +625,13 @@ class Database:
                 ]
                 
                 # Insert templates
+                placeholder = '%s' if self.use_postgres else '?'
                 for template in default_templates:
-                    cursor.execute('''
+                    sql = f'''
                         INSERT INTO templates (name, description, list_type, items, created_by, is_system_template, usage_count)
-                        VALUES (?, ?, ?, ?, ?, TRUE, 0)
-                    ''', (
+                        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, TRUE, 0)
+                    '''
+                    cursor.execute(sql, (
                         template['name'],
                         template['description'],
                         template['list_type'],
@@ -721,14 +855,29 @@ class Database:
                  last_name: str = None, is_admin: bool = False) -> bool:
         """Add or update a user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO users 
-                    (user_id, username, first_name, last_name, is_admin, is_authorized)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (user_id, username, first_name, last_name, is_admin, True))
-                conn.commit()
+                if self.use_postgres:
+                    sql = '''
+                        INSERT INTO users 
+                        (user_id, username, first_name, last_name, is_admin, is_authorized)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                        username = EXCLUDED.username,
+                        first_name = EXCLUDED.first_name,
+                        last_name = EXCLUDED.last_name,
+                        is_admin = EXCLUDED.is_admin,
+                        is_authorized = EXCLUDED.is_authorized
+                    '''
+                else:
+                    sql = '''
+                        INSERT OR REPLACE INTO users 
+                        (user_id, username, first_name, last_name, is_admin, is_authorized)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    '''
+                cursor.execute(sql, (user_id, username, first_name, last_name, is_admin, True))
+                if not self.use_postgres:
+                    conn.commit()
                 return True
         except Exception as e:
             logging.error(f"Error adding user: {e}")
@@ -737,9 +886,10 @@ class Database:
     def is_user_authorized(self, user_id: int) -> bool:
         """Check if user is authorized"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT is_authorized FROM users WHERE user_id = ?', (user_id,))
+                placeholder = '%s' if self.use_postgres else '?'
+                cursor.execute(f'SELECT is_authorized FROM users WHERE user_id = {placeholder}', (user_id,))
                 result = cursor.fetchone()
                 return result and result[0]
         except Exception as e:
@@ -749,7 +899,7 @@ class Database:
     def remove_user_authorization(self, user_id: int) -> bool:
         """Remove user authorization (but keep user in database)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE users 
@@ -765,9 +915,10 @@ class Database:
     def is_user_admin(self, user_id: int) -> bool:
         """Check if user is admin"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT is_admin FROM users WHERE user_id = ?', (user_id,))
+                placeholder = '%s' if self.use_postgres else '?'
+                cursor.execute(f'SELECT is_admin FROM users WHERE user_id = {placeholder}', (user_id,))
                 result = cursor.fetchone()
                 return result and result[0]
         except Exception as e:
@@ -777,7 +928,7 @@ class Database:
     def get_user_info(self, user_id: int) -> Optional[Dict]:
         """Get user information"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT user_id, username, first_name, last_name, is_admin, is_authorized
@@ -810,7 +961,7 @@ class Database:
     def get_items_by_user(self, user_id: int) -> List[Dict]:
         """Get items added by a specific user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT si.id, si.item_name, si.category, si.notes, si.created_at, si.added_by
@@ -859,7 +1010,7 @@ class Database:
     def get_items_by_user_in_list(self, user_id: int, list_id: int) -> List[Dict]:
         """Get items added by a specific user in a specific list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT si.id, si.item_name, si.category, si.notes, si.created_at, si.added_by
@@ -908,7 +1059,7 @@ class Database:
     def delete_item(self, item_id) -> Optional[str]:
         """Delete an item from the shopping list (handles both regular and dynamic items)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if it's a dynamic item ID
@@ -947,7 +1098,7 @@ class Database:
     def get_item_by_id(self, item_id) -> Optional[Dict]:
         """Get an item by its ID (handles both regular and dynamic items)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if it's a dynamic item ID
@@ -994,7 +1145,7 @@ class Database:
     def get_items_by_category(self, category_key: str) -> List[Dict]:
         """Get all items in a specific category (both permanent and non-permanent)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 items = []
@@ -1049,7 +1200,7 @@ class Database:
     def get_all_users(self) -> List[Dict]:
         """Get all registered users"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT user_id, username, first_name, last_name, is_admin, is_authorized
@@ -1077,7 +1228,7 @@ class Database:
     def get_admin_users(self) -> List[Dict]:
         """Get all admin users"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT user_id, username, first_name, last_name, is_admin, is_authorized
@@ -1106,7 +1257,7 @@ class Database:
     def get_user_language(self, user_id: int) -> str:
         """Get user's preferred language"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT language FROM users WHERE user_id = ?', (user_id,))
                 result = cursor.fetchone()
@@ -1118,7 +1269,7 @@ class Database:
     def set_user_language(self, user_id: int, language: str) -> bool:
         """Set user's preferred language"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('UPDATE users SET language = ? WHERE user_id = ?', (language, user_id))
                 conn.commit()
@@ -1130,7 +1281,7 @@ class Database:
     def get_all_authorized_users(self) -> List[Dict]:
         """Get all authorized users for broadcasting"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT user_id, username, first_name, last_name, language 
@@ -1154,7 +1305,7 @@ class Database:
     def save_broadcast_message(self, sender_id: int, message: str, sent_to_count: int) -> bool:
         """Save broadcast message to history"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO broadcast_messages (sender_id, message, sent_to_count)
@@ -1169,7 +1320,7 @@ class Database:
     def get_broadcast_history(self, limit: int = 10) -> List[Dict]:
         """Get recent broadcast message history"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT bm.id, bm.message, bm.sent_to_count, bm.created_at,
@@ -1198,7 +1349,7 @@ class Database:
     def add_item_suggestion(self, suggested_by: int, category_key: str, item_name_en: str, item_name_he: str = None, list_id: int = 1) -> bool:
         """Add a new item suggestion (with duplicate checking)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if item already exists in category (static or dynamic)
@@ -1227,7 +1378,7 @@ class Database:
     def get_pending_suggestions(self, list_id: int = None) -> List[Dict]:
         """Get pending item suggestions, optionally filtered by list_id"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 if list_id is not None:
@@ -1270,7 +1421,7 @@ class Database:
     def approve_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
         """Approve an item suggestion and add it to the category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Get the suggestion details
@@ -1305,7 +1456,7 @@ class Database:
     def reject_suggestion(self, suggestion_id: int, rejected_by: int) -> bool:
         """Reject an item suggestion"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE item_suggestions 
@@ -1321,7 +1472,7 @@ class Database:
     def get_suggestion_by_id(self, suggestion_id: int) -> Optional[Dict]:
         """Get suggestion details by ID"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT s.id, s.category_key, s.item_name_en, s.item_name_he, s.status, s.created_at, s.suggested_by,
@@ -1353,7 +1504,7 @@ class Database:
     def create_list(self, name: str, description: str = None, created_by: int = None, list_type: str = 'custom') -> Optional[int]:
         """Create a new list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO lists (name, description, list_type, created_by)
@@ -1369,7 +1520,7 @@ class Database:
     def get_all_lists(self) -> List[Dict]:
         """Get all active lists"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT l.id, l.name, l.description, l.list_type, l.created_by, l.created_at,
@@ -1400,7 +1551,7 @@ class Database:
     def get_list_by_id(self, list_id: int) -> Optional[Dict]:
         """Get list details by ID"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT l.id, l.name, l.description, l.list_type, l.created_by, l.created_at,
@@ -1430,7 +1581,7 @@ class Database:
     def get_user_lists(self, user_id: int) -> List[Dict]:
         """Get lists created by a specific user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT l.id, l.name, l.description, l.list_type, l.created_at
@@ -1455,7 +1606,7 @@ class Database:
     def update_list_name(self, list_id: int, new_name: str) -> bool:
         """Update list name"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('UPDATE lists SET name = ? WHERE id = ?', (new_name, list_id))
                 conn.commit()
@@ -1467,7 +1618,7 @@ class Database:
     def delete_list(self, list_id: int) -> Optional[str]:
         """Delete a list (soft delete) - with supermarket list protection"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if this is the supermarket list
@@ -1500,7 +1651,7 @@ class Database:
     def reset_list(self, list_id: int) -> bool:
         """Reset a specific list (clear all items)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM item_notes WHERE item_id IN (SELECT id FROM shopping_items WHERE list_id = ?)', (list_id,))
                 cursor.execute('DELETE FROM shopping_items WHERE list_id = ?', (list_id,))
@@ -1513,7 +1664,7 @@ class Database:
     def add_item_to_list(self, list_id: int, item_name: str, category: str = None, notes: str = None, added_by: int = None) -> Optional[int]:
         """Add an item to a specific list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if item already exists in this list
@@ -1602,7 +1753,7 @@ class Database:
     def get_shopping_list_by_id(self, list_id: int) -> List[Dict]:
         """Get items from a specific list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT si.id, si.item_name, si.category, si.notes, si.added_by,
@@ -1658,7 +1809,7 @@ class Database:
     def get_supermarket_list_id(self) -> int:
         """Get the supermarket list ID safely (always returns 1, but verifies it exists)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT id FROM lists WHERE list_type = "supermarket" AND is_active = TRUE')
                 result = cursor.fetchone()
@@ -1682,7 +1833,7 @@ class Database:
     def set_maintenance_mode(self, list_id: int, scheduled_day: str, scheduled_time: str, created_by: int) -> bool:
         """Set maintenance mode for a list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # Deactivate any existing maintenance mode for this list
                 cursor.execute('''
@@ -1705,7 +1856,7 @@ class Database:
     def get_maintenance_mode(self, list_id: int = 1) -> Optional[Dict]:
         """Get active maintenance mode for a list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT id, scheduled_day, scheduled_time, last_reminder, reminder_count, created_at
@@ -1732,7 +1883,7 @@ class Database:
     def update_maintenance_reminder(self, maintenance_id: int) -> bool:
         """Update the last reminder timestamp and count"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE maintenance_mode 
@@ -1748,7 +1899,7 @@ class Database:
     def deactivate_maintenance_mode(self, list_id: int) -> bool:
         """Deactivate maintenance mode for a list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE maintenance_mode 
@@ -1765,7 +1916,7 @@ class Database:
     def add_custom_category(self, category_key: str, emoji: str, name_en: str, name_he: str, created_by: int) -> bool:
         """Add a new custom category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO custom_categories (category_key, emoji, name_en, name_he, created_by)
@@ -1783,7 +1934,7 @@ class Database:
     def get_custom_categories(self) -> List[Dict]:
         """Get all custom categories"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT category_key, emoji, name_en, name_he, created_by, created_at
@@ -1808,7 +1959,7 @@ class Database:
     def get_custom_category(self, category_key: str) -> Optional[Dict]:
         """Get a specific custom category by key"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT category_key, emoji, name_en, name_he, created_by, created_at
@@ -1833,7 +1984,7 @@ class Database:
     def delete_custom_category(self, category_key: str) -> bool:
         """Delete a custom category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM custom_categories WHERE category_key = ?', (category_key,))
                 conn.commit()
@@ -1845,7 +1996,7 @@ class Database:
     def count_items_in_category(self, category_key: str) -> int:
         """Count items in a specific category across all lists"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT COUNT(*) FROM shopping_items 
@@ -1861,7 +2012,7 @@ class Database:
     def add_category_suggestion(self, suggested_by: int, category_key: str, emoji: str, name_en: str, name_he: str) -> bool:
         """Add a new category suggestion (with duplicate checking)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if category already exists (predefined or custom)
@@ -1895,7 +2046,7 @@ class Database:
     def get_pending_category_suggestions(self) -> List[Dict]:
         """Get pending category suggestions"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT s.id, s.category_key, s.emoji, s.name_en, s.name_he, s.created_at,
@@ -1927,7 +2078,7 @@ class Database:
     def get_pending_item_suggestions_count(self) -> int:
         """Get count of pending item suggestions"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT COUNT(*) FROM item_suggestions 
@@ -1941,7 +2092,7 @@ class Database:
     def get_pending_category_suggestions_count(self) -> int:
         """Get count of pending category suggestions"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT COUNT(*) FROM category_suggestions 
@@ -1955,7 +2106,7 @@ class Database:
     def get_total_pending_suggestions_count(self) -> int:
         """Get total count of pending suggestions (items + categories)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT 
@@ -1970,7 +2121,7 @@ class Database:
     def get_recently_used_items(self, days: int = 7) -> List[Dict]:
         """Get items that were added to lists in the past N days"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT DISTINCT item_name, category, COUNT(*) as usage_count
@@ -1990,7 +2141,7 @@ class Database:
     def approve_category_suggestion(self, suggestion_id: int, approved_by: int) -> bool:
         """Approve a category suggestion and create the category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Get suggestion details
@@ -2028,7 +2179,7 @@ class Database:
     def reject_category_suggestion(self, suggestion_id: int, rejected_by: int) -> bool:
         """Reject a category suggestion"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE category_suggestions 
@@ -2044,7 +2195,7 @@ class Database:
     def get_category_suggestion_by_id(self, suggestion_id: int) -> Optional[Dict]:
         """Get a specific category suggestion by ID"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT s.id, s.category_key, s.emoji, s.name_en, s.name_he, s.status, s.created_at, s.suggested_by,
@@ -2077,7 +2228,7 @@ class Database:
     def add_deleted_item(self, category_key: str, item_name: str, deleted_by: int) -> bool:
         """Add an item to the deleted items list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO deleted_items (category_key, item_name, deleted_by)
@@ -2092,7 +2243,7 @@ class Database:
     def get_deleted_items_by_category(self, category_key: str) -> List[str]:
         """Get all deleted items for a category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT item_name FROM deleted_items
@@ -2107,7 +2258,7 @@ class Database:
     def is_item_deleted(self, category_key: str, item_name: str) -> bool:
         """Check if an item is deleted from a category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT COUNT(*) FROM deleted_items
@@ -2122,7 +2273,7 @@ class Database:
     def restore_deleted_item(self, category_key: str, item_name: str) -> bool:
         """Restore a previously deleted item by removing it from deleted_items table"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     DELETE FROM deleted_items 
@@ -2142,7 +2293,7 @@ class Database:
             if self.is_item_in_category(category_key, item_name_en):
                 return False  # Item already exists
             
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -2158,7 +2309,7 @@ class Database:
     def get_dynamic_category_items(self, category_key: str) -> List[Dict]:
         """Get all dynamic items for a category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT item_name_en, item_name_he FROM dynamic_category_items
@@ -2190,7 +2341,7 @@ class Database:
                         if not self.is_item_deleted(category_key, item_name):
                             return True
             
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check dynamic items
@@ -2210,7 +2361,7 @@ class Database:
     def remove_dynamic_category_item(self, category_key: str, item_name: str) -> bool:
         """Remove a dynamic item from a category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     DELETE FROM dynamic_category_items
@@ -2225,7 +2376,7 @@ class Database:
     def rename_item(self, old_name: str, new_name_en: str, category_key: str, new_name_he: str = None) -> bool:
         """Rename an item in a category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Use Hebrew name if provided, otherwise use English name for both
@@ -2275,7 +2426,7 @@ class Database:
     def rename_category(self, category_key: str, new_name_en: str, new_name_he: str) -> bool:
         """Rename a custom category"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Update in custom_categories table
@@ -2294,7 +2445,7 @@ class Database:
     def is_category_name_exists(self, category_name: str) -> bool:
         """Check if a category name already exists"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check in custom_categories table
@@ -2332,7 +2483,7 @@ class Database:
     def get_category_by_key(self, category_key: str) -> Optional[dict]:
         """Get a custom category by its key"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -2361,7 +2512,7 @@ class Database:
         """Create a new template"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO templates (name, description, list_type, items, created_by, is_system_template)
@@ -2378,7 +2529,7 @@ class Database:
         """Get all system templates (global, not list-specific)"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -2422,7 +2573,7 @@ class Database:
         """Get a template by its ID"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -2463,7 +2614,7 @@ class Database:
         """Add Hebrew translations to existing system templates"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Get all templates without Hebrew translations
@@ -2593,7 +2744,7 @@ class Database:
         """Get templates for a specific list type"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 if user_id:
@@ -2647,7 +2798,7 @@ class Database:
         """Get a specific template by ID"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT t.id, t.name, t.description, t.list_type, t.items, t.created_by, 
@@ -2684,7 +2835,7 @@ class Database:
         """Update a template"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 updates = []
@@ -2720,7 +2871,7 @@ class Database:
     def delete_template(self, template_id: int, user_id: int) -> bool:
         """Delete a template (only if user is creator or admin)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if user can delete this template
@@ -2757,7 +2908,7 @@ class Database:
                                 items_added: int = 0) -> bool:
         """Increment template usage count and track usage"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Update template usage count and last_used
@@ -2782,7 +2933,7 @@ class Database:
     def get_template_usage_stats(self, template_id: int = None) -> List[Dict]:
         """Get template usage statistics"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 if template_id:
@@ -2912,7 +3063,7 @@ class Database:
         """Get templates created by a specific user"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT id, name, description, list_type, items, usage_count, last_used, created_at
@@ -2941,7 +3092,7 @@ class Database:
     def get_list_id_by_type(self, list_type: str) -> Optional[int]:
         """Get list_id by list_type"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT id FROM lists WHERE list_type = ?', (list_type,))
                 result = cursor.fetchone()
@@ -2954,7 +3105,7 @@ class Database:
         """Get most popular templates"""
         try:
             import json
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 if list_type:
@@ -2999,7 +3150,7 @@ class Database:
     def create_list_sharing(self, list_id: int, user_ids: List[int]) -> bool:
         """Create sharing records for a custom shared list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 for user_id in user_ids:
                     cursor.execute('''
@@ -3015,7 +3166,7 @@ class Database:
     def get_user_accessible_lists(self, user_id: int, list_types: List[str] = None) -> List[Dict]:
         """Get lists accessible to a specific user (includes custom shared lists)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Build base query
@@ -3063,7 +3214,7 @@ class Database:
     def get_custom_shared_list_users(self, list_id: int) -> List[Dict]:
         """Get users who have access to a custom shared list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT u.user_id, u.username, u.first_name, u.last_name, ls.can_edit, ls.shared_at
@@ -3091,7 +3242,7 @@ class Database:
     def freeze_list(self, list_id: int) -> bool:
         """Freeze a list (cannot add/remove items anymore)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE lists 
@@ -3107,7 +3258,7 @@ class Database:
     def unfreeze_list(self, list_id: int) -> bool:
         """Unfreeze a list (restore normal functionality)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE lists 
@@ -3123,7 +3274,7 @@ class Database:
     def is_list_frozen(self, list_id: int) -> bool:
         """Check if a list is frozen"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT is_frozen FROM lists WHERE id = ?', (list_id,))
                 result = cursor.fetchone()
@@ -3135,7 +3286,7 @@ class Database:
     def get_frozen_info(self, list_id: int) -> Dict:
         """Get frozen information for a list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT is_frozen, frozen_at FROM lists WHERE id = ?
@@ -3154,7 +3305,7 @@ class Database:
     def mark_item_status(self, item_id: int, status: str, user_id: int) -> bool:
         """Mark an item as bought or not found"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # First check if this item exists and get its list_id
@@ -3184,7 +3335,7 @@ class Database:
     def get_item_status(self, item_id: int, user_id: int) -> str:
         """Get item status for a specific user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT status FROM item_status_tracking 
@@ -3199,7 +3350,7 @@ class Database:
     def get_shopping_item_by_id(self, item_id: int) -> Dict:
         """Get shopping item by ID"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT id, item_name, notes, category, list_id 
@@ -3223,7 +3374,7 @@ class Database:
     def clear_item_statuses_for_list(self, list_id: int) -> bool:
         """Clear all item status tracking for a specific list"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Get all items in this list

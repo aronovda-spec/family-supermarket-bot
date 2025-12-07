@@ -23,13 +23,6 @@ def main():
         print("🔧 Then edit bot_config.env with your developer bot token")
         sys.exit(1)
     
-    # Start Supabase keep-alive mechanism (optional, won't fail if not configured)
-    try:
-        from supabase_keep_alive import start_supabase_keep_alive
-        start_supabase_keep_alive()
-    except Exception as e:
-        print(f"⚠️ Supabase keep-alive not started: {e}")
-    
     # Import and run the bot
     try:
         from bot import ShoppingBot

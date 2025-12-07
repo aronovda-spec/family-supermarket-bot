@@ -31,13 +31,21 @@ if admin_ids_str and admin_ids_str != 'your_admin_user_id_here':
         print("💡 Please set ADMIN_IDS to your Telegram user ID (numbers only)")
         ADMIN_IDS = []
 
-# Database Configuration - Separate database for developer mode
+# Database Configuration - Support for PostgreSQL (Neon) or SQLite
+# Priority: DATABASE_URL (PostgreSQL) > DATABASE_PATH (SQLite)
+DATABASE_URL = os.getenv('DATABASE_URL')  # PostgreSQL connection string (for Neon)
 if DEVELOPER_MODE:
     DATABASE_PATH = os.getenv('DEV_DATABASE_PATH', 'shopping_bot_dev.db')
-    print(f"Using developer database: {DATABASE_PATH}")
+    if DATABASE_URL:
+        print(f"Using developer PostgreSQL database (Neon)")
+    else:
+        print(f"Using developer SQLite database: {DATABASE_PATH}")
 else:
     DATABASE_PATH = os.getenv('DATABASE_PATH', 'shopping_bot.db')
-    print(f"Using production database: {DATABASE_PATH}")
+    if DATABASE_URL:
+        print(f"Using production PostgreSQL database (Neon)")
+    else:
+        print(f"Using production SQLite database: {DATABASE_PATH}")
 
 # Categories Configuration - Multi-language
 CATEGORIES = {
