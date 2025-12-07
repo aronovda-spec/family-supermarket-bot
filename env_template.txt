@@ -9,3 +9,15 @@ ADMIN_IDS=123456789,987654321
 
 # Database Configuration
 DATABASE_PATH=shopping_bot.db
+
+# Supabase Configuration (for keep-alive mechanism)
+# Get these from your Supabase project settings: https://app.supabase.com
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_KEY=your_supabase_anon_key_here
+# Alternative: You can use SUPABASE_ANON_KEY instead of SUPABASE_KEY
+
+# Supabase Keep-Alive Interval (optional)
+# Default: 4 hours (prevents pausing - Supabase free tier pauses after 7 days)
+# Format: seconds (e.g., 14400) or with suffix (e.g., 4h, 24h, 30m)
+# Examples: 14400 (4 hours), 4h (4 hours), 24h (24 hours), 30m (30 minutes)
+# SUPABASE_KEEP_ALIVE_INTERVAL=4h

@@ -57,6 +57,13 @@ def main():
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
     
+    # Start Supabase keep-alive mechanism
+    try:
+        from supabase_keep_alive import start_supabase_keep_alive
+        start_supabase_keep_alive()
+    except Exception as e:
+        print(f"⚠️ Supabase keep-alive not started: {e}")
+    
     # Give health server time to start
     time.sleep(2)
     

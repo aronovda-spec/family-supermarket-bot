@@ -82,6 +82,13 @@ def main():
     # Start keep-alive mechanism
     start_keep_alive()
     
+    # Start Supabase keep-alive mechanism
+    try:
+        from supabase_keep_alive import start_supabase_keep_alive
+        start_supabase_keep_alive()
+    except Exception as e:
+        print(f"⚠️ Supabase keep-alive not started: {e}")
+    
     # Wait a moment for health server to start
     time.sleep(3)
     
