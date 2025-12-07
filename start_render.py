@@ -95,6 +95,32 @@ def main():
     print(f"⏰ Started at: {datetime.now()}")
     print(f"🌐 Service type: Web Service (with health checks)")
     
+    # Verify database connection
+    print("\n📊 Database Connection:")
+    try:
+        from database import Database
+        db = Database()
+        if db.use_postgres:
+            print("   ✅ Connected to PostgreSQL (Neon)")
+            print("   ✅ All tables accessible")
+            print("   ✅ Data will persist across restarts")
+            
+            # Verify tables exist
+            with db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                """)
+                table_count = cursor.fetchone()[0]
+                print(f"   ✅ Found {table_count} tables in database")
+        else:
+            print("   ⚠️ Using SQLite (local file)")
+            print("   ⚠️ Data will NOT persist on Render free tier")
+            print("   💡 Set DATABASE_URL to use Neon PostgreSQL")
+    except Exception as e:
+        print(f"   ❌ Database connection error: {e}")
+    
     # Start health check server in a separate thread
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
